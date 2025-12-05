@@ -1,0 +1,2999 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Web",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://api.redsis.com.br"
+    },
+    {
+      "url": "http://testeapi.redsis.com.br"
+    },
+    {
+      "url": "https://testeapi.redsis.com.br"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "noAuth": {
+        "$ref": "config.json#/components/securitySchemes/noauthAuth"
+      },
+      "bearerAuth": {
+        "$ref": "config.json#/components/securitySchemes/bearerAuth"
+      },
+      "basicAuth": {
+        "$ref": "config.json#/components/securitySchemes/basicAuth"
+      }
+    },
+    "schemas": {
+      "Token": {
+        "type": "object",
+        "properties": {
+          "usuario": {
+            "type": "string"
+          },
+          "senha": {
+            "type": "string"
+          },
+          "app": {
+            "type": "string",
+            "enum": [
+              "web"
+            ]
+          },
+          "servidor": {
+            "type": "string"
+          },
+          "porta": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "usuario",
+          "senha",
+          "app",
+          "servidor",
+          "porta"
+        ],
+        "examples": {
+          "usuario": "",
+          "senha": "",
+          "app": "",
+          "servidor": "",
+          "porta": ""
+        }
+      },
+      "Cliente": {
+        "type": "object",
+        "properties": {
+          "codigo": {
+            "type": "integer"
+          },
+          "nome": {
+            "type": "string"
+          },
+          "fantasia": {
+            "type": "string"
+          },
+          "cnpjcpf": {
+            "type": "string"
+          },
+          "cep": {
+            "type": "string"
+          },
+          "endereco": {
+            "type": "string"
+          },
+          "numero": {
+            "type": "string"
+          },
+          "bairro": {
+            "type": "string"
+          },
+          "complemento": {
+            "type": "string"
+          },
+          "uf": {
+            "type": "string"
+          },
+          "uf_ex": {
+            "type": "string"
+          },
+          "codigo_municipio": {
+            "type": "integer"
+          },
+          "municipio": {
+            "type": "string"
+          },
+          "municipio_ex": {
+            "type": "string"
+          },
+          "municipio_alt": {
+            "type": "string"
+          },
+          "codigo_pais": {
+            "type": "integer"
+          },
+          "pais": {
+            "type": "string"
+          },
+          "ie": {
+            "type": "string"
+          },
+          "codigo_vendedor": {
+            "type": "integer"
+          },
+          "vendedor": {
+            "type": "string"
+          },
+          "telefone": {
+            "type": "string"
+          },
+          "celular": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "distancia": {
+            "type": "number"
+          },
+          "facebook": {
+            "type": "string"
+          },
+          "instagram": {
+            "type": "string"
+          },
+          "linkedin": {
+            "type": "string"
+          },
+          "twitter": {
+            "type": "string"
+          },
+          "tiktok": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "string"
+          },
+          "codigo_categoria": {
+            "type": "integer"
+          },
+          "categoria": {
+            "type": "string"
+          },
+          "situacao": {
+            "type": "string"
+          },
+          "data_cadastro": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "PostCliente": {
+        "type": "object",
+        "properties": {
+          "nome": {
+            "type": "string"
+          },
+          "fantasia": {
+            "type": "string"
+          },
+          "cnpjcpf": {
+            "type": "string"
+          },
+          "cep": {
+            "type": "string"
+          },
+          "endereco": {
+            "type": "string"
+          },
+          "numero": {
+            "type": "string"
+          },
+          "bairro": {
+            "type": "string"
+          },
+          "complemento": {
+            "type": "string"
+          },
+          "uf": {
+            "type": "string"
+          },
+          "uf_ex": {
+            "type": "string"
+          },
+          "codigo_municipio": {
+            "type": "integer"
+          },
+          "municipio": {
+            "type": "string"
+          },
+          "municipio_ex": {
+            "type": "string"
+          },
+          "codigo_pais": {
+            "type": "integer"
+          },
+          "ie": {
+            "type": "string"
+          },
+          "codigo_vendedor": {
+            "type": "integer"
+          },
+          "telefone": {
+            "type": "string"
+          },
+          "celular": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "facebook": {
+            "type": "string"
+          },
+          "instagram": {
+            "type": "string"
+          },
+          "linkedin": {
+            "type": "string"
+          },
+          "twitter": {
+            "type": "string"
+          },
+          "tiktok": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "string"
+          },
+          "codigo_categoria": {
+            "type": "integer"
+          },
+          "situacao": {
+            "type": "string"
+          }
+        }
+      },
+      "Contato": {
+        "type": "object",
+        "properties": {
+          "codigo": {
+            "type": "integer"
+          },
+          "cnpjcpf": {
+            "type": "string"
+          },
+          "nome": {
+            "type": "string"
+          },
+          "telefone": {
+            "type": "string"
+          },
+          "telefone2": {
+            "type": "string"
+          },
+          "telefone3": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "aniversario": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "cargo": {
+            "type": "string"
+          },
+          "facebook": {
+            "type": "string"
+          },
+          "instagram": {
+            "type": "string"
+          },
+          "linkedin": {
+            "type": "string"
+          },
+          "twitter": {
+            "type": "string"
+          },
+          "tiktok": {
+            "type": "string"
+          }
+        }
+      },
+      "PostContato": {
+        "type": "object",
+        "properties": {
+          "cnpjcpf": {
+            "type": "string"
+          },
+          "nome": {
+            "type": "string"
+          },
+          "telefone": {
+            "type": "string"
+          },
+          "telefone2": {
+            "type": "string"
+          },
+          "telefone3": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "aniversario": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "cargo": {
+            "type": "string"
+          },
+          "facebook": {
+            "type": "string"
+          },
+          "instagram": {
+            "type": "string"
+          },
+          "linkedin": {
+            "type": "string"
+          },
+          "twitter": {
+            "type": "string"
+          },
+          "tiktok": {
+            "type": "string"
+          }
+        }
+      },
+      "Informacao": {
+        "type": "object",
+        "properties": {
+          "codigo": {
+            "type": "integer"
+          },
+          "codigo_cliente": {
+            "type": "integer"
+          },
+          "data": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "tipo": {
+            "type": "string"
+          },
+          "descricao": {
+            "type": "string"
+          },
+          "usuario": {
+            "type": "integer"
+          }
+        }
+      },
+      "PostInformacao": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "tipo": {
+            "type": "string"
+          },
+          "descricao": {
+            "type": "string"
+          }
+        }
+      },
+      "Anotacao": {
+        "type": "object",
+        "properties": {
+          "codigo": {
+            "type": "integer"
+          },
+          "codigo_cliente": {
+            "type": "integer"
+          },
+          "data": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "tipo": {
+            "type": "string"
+          },
+          "conteudo": {
+            "type": "string"
+          },
+          "usuario": {
+            "type": "string"
+          }
+        }
+      },
+      "PostAnotacao": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "tipo": {
+            "type": "string"
+          },
+          "conteudo": {
+            "type": "string"
+          }
+        }
+      },
+      "ItemPedido": {
+        "type": "object",
+        "properties": {
+          "codigo": {
+            "type": "integer"
+          },
+          "lote": {
+            "type": "string"
+          },
+          "bloco": {
+            "type": "integer"
+          },
+          "chapas": {
+            "type": "string"
+          },
+          "codigo_material": {
+            "type": "integer"
+          },
+          "material": {
+            "type": "string"
+          },
+          "industrializacao": {
+            "type": "string"
+          },
+          "pecas": {
+            "type": "integer"
+          },
+          "estoque_m2": {
+            "type": "number"
+          },
+          "estoque_sqft": {
+            "type": "number"
+          },
+          "cavalete": {
+            "type": "integer"
+          },
+          "preco_m2": {
+            "type": "number"
+          },
+          "preco_sqft": {
+            "type": "number"
+          },
+          "peso_liquido": {
+            "type": "number"
+          },
+          "espessura": {
+            "type": "number"
+          },
+          "medidas_m2": {
+            "type": "string"
+          },
+          "medidas_sqft": {
+            "type": "string"
+          }
+        }
+      },
+      "Oferta": {
+        "type": "object",
+        "properties": {
+          "codigo": {
+            "type": "integer"
+          },
+          "numero": {
+            "type": "integer"
+          },
+          "acessos": {
+            "type": "integer"
+          },
+          "moeda": {
+            "type": "string"
+          },
+          "data": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "vendedor": {
+            "type": "string"
+          },
+          "cobranca": {
+            "type": "string"
+          },
+          "parcelamento": {
+            "type": "string"
+          },
+          "itens": {
+            "type": "array",
+            "$ref": "#/components/schemas/ItemPedido"
+          }
+        }
+      },
+      "Pedido": {
+        "type": "object",
+        "properties": {
+          "codigo": {
+            "type": "integer"
+          },
+          "numero": {
+            "type": "integer"
+          },
+          "acessos": {
+            "type": "integer"
+          },
+          "moeda": {
+            "type": "string"
+          },
+          "data": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "vendedor": {
+            "type": "string"
+          },
+          "cobranca": {
+            "type": "string"
+          },
+          "parcelamento": {
+            "type": "string"
+          },
+          "itens": {
+            "type": "array",
+            "$ref": "#/components/schemas/ItemPedido"
+          }
+        }
+      },
+      "Chapa": {
+        "type": "object",
+        "properties": {
+          "codigo": {
+            "type": "integer"
+          },
+          "situacao": {
+            "type": "string"
+          },
+          "lote": {
+            "type": "string"
+          },
+          "bloco": {
+            "type": "integer"
+          },
+          "chapa": {
+            "type": "integer"
+          },
+          "codigo_grupo": {
+            "type": "integer"
+          },
+          "grupo": {
+            "type": "string"
+          },
+          "codigo_material": {
+            "type": "integer"
+          },
+          "material": {
+            "type": "string"
+          },
+          "industrializacao": {
+            "type": "string"
+          },
+          "blocotc": {
+            "type": "string"
+          },
+          "comprimento_lq": {
+            "type": "number"
+          },
+          "largura_lq": {
+            "type": "number"
+          },
+          "altesp_lq": {
+            "type": "number"
+          },
+          "comprimento_br": {
+            "type": "number"
+          },
+          "largura_br": {
+            "type": "number"
+          },
+          "altesp_br": {
+            "type": "number"
+          },
+          "pecas": {
+            "type": "integer"
+          },
+          "estoque_m2": {
+            "type": "number"
+          },
+          "estoque_sqft": {
+            "type": "number"
+          },
+          "un": {
+            "type": "string"
+          },
+          "defeitos": {
+            "type": "string"
+          },
+          "empresa": {
+            "type": "integer"
+          },
+          "preco_m2": {
+            "type": "number"
+          },
+          "preco_sqft": {
+            "type": "number"
+          },
+          "medidas_m2": {
+            "type": "string"
+          },
+          "medias_sqft": {
+            "type": "string"
+          },
+          "peso_bruto": {
+            "type": "number"
+          },
+          "peso_liquido": {
+            "type": "number"
+          },
+          "foto": {
+            "type": "boolean"
+          }
+        }
+      },
+      "Cavalete": {
+        "type": "object",
+        "properties": {
+          "codigo": {
+            "type": "integer"
+          },
+          "pecas": {
+            "type": "integer"
+          },
+          "estoque_m2": {
+            "type": "number"
+          },
+          "estoque_sqft": {
+            "type": "number"
+          },
+          "peso_bruto": {
+            "type": "number"
+          },
+          "peso_liquido": {
+            "type": "number"
+          },
+          "industrializacao": {
+            "type": "string"
+          },
+          "espessura": {
+            "type": "number"
+          },
+          "codigo_material": {
+            "type": "integer"
+          },
+          "material": {
+            "type": "string"
+          },
+          "bloco": {
+            "type": "integer"
+          },
+          "blocotc": {
+            "type": "string"
+          },
+          "preco_m2": {
+            "type": "number"
+          },
+          "preco_sqft": {
+            "type": "number"
+          },
+          "medidas_m2": {
+            "type": "string"
+          },
+          "medias_sqft": {
+            "type": "string"
+          },
+          "situacao": {
+            "type": "string"
+          },
+          "empresa": {
+            "type": "integer"
+          },
+          "data_entrada": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reservado_por": {
+            "type": "string"
+          }
+        }
+      },
+      "Funil": {
+        "type": "object",
+        "properties": {
+          "codigo": {
+            "type": "integer"
+          },
+          "descricao": {
+            "type": "string"
+          },
+          "sigla": {
+            "type": "string"
+          }
+        }
+      },
+      "SubFunil": {
+        "type": "object",
+        "properties": {
+          "codigo": {
+            "type": "integer"
+          },
+          "descricao": {
+            "type": "string"
+          },
+          "order": {
+            "type": "integer"
+          },
+          "cor": {
+            "type": "string"
+          }
+        }
+      },
+      "Atividade": {
+        "type": "object",
+        "properties": {
+          "codigo": {
+            "type": "integer"
+          },
+          "codigo_funil": {
+            "type": "integer"
+          },
+          "codigo_subfunil": {
+            "type": "integer"
+          },
+          "codigo_cliente": {
+            "type": "integer"
+          },
+          "cliente": {
+            "type": "string"
+          },
+          "situacao_cliente": {
+            "type": "string"
+          },
+          "codigo_vendedor": {
+            "type": "integer"
+          },
+          "vendedor": {
+            "type": "string"
+          },
+          "situacao": {
+            "type": "string"
+          },
+          "data_criacao": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "data_prazo": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "observacao": {
+            "type": "string"
+          },
+          "cobranca": {
+            "type": "string"
+          },
+          "parcelamento": {
+            "type": "string"
+          },
+          "moeda": {
+            "type": "string"
+          },
+          "ipi": {
+            "type": "number"
+          },
+          "seguro": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        }
+      },
+      "PostAtividade": {
+        "type": "object",
+        "properties": {
+          "codigo_cliente": {
+            "type": "integer"
+          },
+          "codigo_moeda": {
+            "type": "integer"
+          },
+          "observacao": {
+            "type": "string"
+          }
+        }
+      },
+      "Tarefa": {
+        "type": "object",
+        "properties": {
+          "codigo": {
+            "type": "integer"
+          },
+          "tipo": {
+            "type": "string"
+          },
+          "observacao": {
+            "type": "string"
+          },
+          "situacao": {
+            "type": "string"
+          },
+          "codigo_usuario": {
+            "type": "integer"
+          },
+          "usuario": {
+            "type": "string"
+          },
+          "codigo_responsavel": {
+            "type": "integer"
+          },
+          "responsavel": {
+            "type": "string"
+          },
+          "data_criacao": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "data_prazo": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "data_finalizacao": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "PostTarefa": {
+        "type": "object",
+        "properties": {
+          "tipo": {
+            "type": "string"
+          },
+          "observacao": {
+            "type": "string"
+          },
+          "codigo_responsavel": {
+            "type": "integer"
+          },
+          "data_prazo": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/token": {
+      "post": {
+        "tags": [
+          "Token"
+        ],
+        "summary": "Requisitar token bearer",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Token"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Token"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "noAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Requisição executada com sucesso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "token": {
+                      "type": "string",
+                      "format": "byte"
+                    }
+                  },
+                  "required": [
+                    "result"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/web/clientes/{codigo}": {
+      "get": {
+        "tags": [
+          "Clientes"
+        ],
+        "summary": "Retorna o cliente",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "config.json#/components/parameters/Codigo"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Requisição executada com sucesso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cliente"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "config.json#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Clientes"
+        ],
+        "summary": "Excluir o cliente",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "config.json#/components/parameters/Codigo"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "config.json#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "config.json#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Clientes"
+        ],
+        "summary": "Atualiza o cliente",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "config.json#/components/parameters/Codigo"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostCliente"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "$ref": "config.json#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "config.json#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/web/clientes/vendedor/{codigo}": {
+      "get": {
+        "tags": [
+          "Clientes"
+        ],
+        "summary": "Retorna os clientes de um vendedor",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "config.json#/components/parameters/Codigo"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Requisição executada com sucesso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Cliente"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "config.json#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/web/clientes": {
+      "post": {
+        "tags": [
+          "Clientes"
+        ],
+        "summary": "Cria um novo cliente",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostCliente"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "$ref": "config.json#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "config.json#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/grupos_pessoas": {
+      "get": {
+        "tags": [
+          "Grupos de clientes"
+        ],
+        "summary": "Retorna os grupos de pessoas",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Requisição executada com sucesso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "codigo": {
+                            "type": "integer"
+                          },
+                          "grupo": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "config.json#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/web/clientes/{cliente}/contatos/{codigo}": {
+      "get": {
+        "tags": [
+          "Contatos"
+        ],
+        "summary": "Retorna os dados de um contato de um cliente",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "cliente",
+            "in": "path",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true,
+            "description": "Código do cliente"
+          },
+          {
+            "$ref": "config.json#/components/parameters/Codigo"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Requisição executada com sucesso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Contato"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "config.json#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Contatos"
+        ],
+        "summary": "Excluir o contato",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "cliente",
+            "in": "path",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true,
+            "description": "Código do cliente"
+          },
+          {
+            "$ref": "config.json#/components/parameters/Codigo"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "config.json#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "config.json#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Contatos"
+        ],
+        "summary": "Atualiza o contato",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "cliente",
+            "in": "path",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true,
+            "description": "Código do cliente"
+          },
+          {
+            "$ref": "config.json#/components/parameters/Codigo"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostContato"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "$ref": "config.json#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "config.json#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/web/clientes/{cliente}/contatos": {
+      "get": {
+        "tags": [
+          "Contatos"
+        ],
+        "summary": "Retorna os contatos de um cliente",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "cliente",
+            "in": "path",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true,
+            "description": "Código do cliente"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Requisição executada com sucesso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Contato"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "config.json#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Contatos"
+        ],
+        "summary": "Cria um novo contato para o cliente",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "cliente",
+            "in": "path",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true,
+            "description": "Código do cliente"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostContato"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "$ref": "config.json#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "config.json#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/web/clientes/{cliente}/informacoes/{codigo}": {
+      "get": {
+        "tags": [
+          "Informações"
+        ],
+        "summary": "Retorna uma informação expecífica de um cliente",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "cliente",
+            "in": "path",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true,
+            "description": "Código do cliente"
+          },
+          {
+            "$ref": "config.json#/components/parameters/Codigo"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Requisição executada com sucesso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Informacao"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "config.json#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Informações"
+        ],
+        "summary": "Excluir uma informação",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "cliente",
+            "in": "path",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true,
+            "description": "Código do cliente"
+          },
+          {
+            "$ref": "config.json#/components/parameters/Codigo"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "config.json#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "config.json#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Informações"
+        ],
+        "summary": "Atualiza a informação do cliente",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "cliente",
+            "in": "path",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true,
+            "description": "Código do cliente"
+          },
+          {
+            "$ref": "config.json#/components/parameters/Codigo"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostInformacao"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "$ref": "config.json#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "config.json#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/web/clientes/{cliente}/informacoes": {
+      "get": {
+        "tags": [
+          "Informações"
+        ],
+        "summary": "Retorna todas as informações de um cliente",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "cliente",
+            "in": "path",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true,
+            "description": "Código do cliente"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Requisição executada com sucesso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Informacao"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "config.json#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Informações"
+        ],
+        "summary": "Cria uma nova informação sobre o cliente",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "cliente",
+            "in": "path",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true,
+            "description": "Código do cliente"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostInformacao"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "$ref": "config.json#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "config.json#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/web/clientes/{cliente}/anotacoes/{codigo}": {
+      "get": {
+        "tags": [
+          "Anotações"
+        ],
+        "summary": "Retorna uma anotação/agendamento expecífica de um cliente",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "cliente",
+            "in": "path",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true,
+            "description": "Código do cliente"
+          },
+          {
+            "$ref": "config.json#/components/parameters/Codigo"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Requisição executada com sucesso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Anotacao"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "config.json#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Anotações"
+        ],
+        "summary": "Excluir uma anotação/agendamento",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "cliente",
+            "in": "path",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true,
+            "description": "Código do cliente"
+          },
+          {
+            "$ref": "config.json#/components/parameters/Codigo"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "config.json#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "config.json#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Anotações"
+        ],
+        "summary": "Atualiza a anotação/agendamento do cliente",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "cliente",
+            "in": "path",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true,
+            "description": "Código do cliente"
+          },
+          {
+            "$ref": "config.json#/components/parameters/Codigo"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostAnotacao"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "$ref": "config.json#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "config.json#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/web/clientes/{cliente}/anotacoes": {
+      "get": {
+        "tags": [
+          "Anotações"
+        ],
+        "summary": "Retorna todas as anotações/agendamentos de um cliente",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "cliente",
+            "in": "path",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true,
+            "description": "Código do cliente"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Requisição executada com sucesso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Anotacao"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "config.json#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Anotações"
+        ],
+        "summary": "Cria uma nova anotação/agendamento para o cliente",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "cliente",
+            "in": "path",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true,
+            "description": "Código do cliente"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostAnotacao"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "$ref": "config.json#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "config.json#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/web/clientes/{cliente}/ofertas": {
+      "get": {
+        "tags": [
+          "Documentos"
+        ],
+        "summary": "Retorna todas as ofertas vinculadas a um cliente ordenado por emissão decrescente",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "cliente",
+            "in": "path",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true,
+            "description": "Código do cliente"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "required": false,
+            "description": "Quantidade de ofertas que devem ser retornadas"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Requisição executada com sucesso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Oferta"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "config.json#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/web/clientes/{cliente}/pedidos": {
+      "get": {
+        "tags": [
+          "Documentos"
+        ],
+        "summary": "Retorna todos os pedidos vinculados a um cliente ordenado por emissão decrescente",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "cliente",
+            "in": "path",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true,
+            "description": "Código do cliente"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "required": false,
+            "description": "Quantidade de pedidos que devem ser retornados"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Requisição executada com sucesso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Pedido"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "config.json#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/web/estoque/chapas": {
+      "get": {
+        "tags": [
+          "Estoque"
+        ],
+        "summary": "Retorna as chapas disponíveis",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "industrializacao",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "description": "Industrialização"
+          },
+          {
+            "name": "lote",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "description": "Lote"
+          },
+          {
+            "name": "blocotc",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "description": "Número do bloco de terceiros"
+          },
+          {
+            "name": "empresa",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "required": false,
+            "description": "Código da empresa a ser consultado o estoque"
+          },
+          {
+            "name": "bloco",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "required": false,
+            "description": "Número do bloco interno"
+          },
+          {
+            "name": "material",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "required": false,
+            "description": "Código do material"
+          },
+          {
+            "name": "altesp",
+            "in": "query",
+            "schema": {
+              "type": "number"
+            },
+            "required": false,
+            "description": "Altura/Espessura do material"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Requisição executada com sucesso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Chapa"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "config.json#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/web/estoque/cavaletes": {
+      "get": {
+        "tags": [
+          "Estoque"
+        ],
+        "summary": "Retorna os cavaletes disponíveis",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "industrializacao",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "description": "Industrialização"
+          },
+          {
+            "name": "lote",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "description": "Lote"
+          },
+          {
+            "name": "blocotc",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "description": "Número do bloco de terceiros"
+          },
+          {
+            "name": "empresa",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "required": false,
+            "description": "Código da empresa a ser consultado o estoque"
+          },
+          {
+            "name": "bloco",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "required": false,
+            "description": "Número do bloco interno"
+          },
+          {
+            "name": "material",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "required": false,
+            "description": "Código do material"
+          },
+          {
+            "name": "altesp",
+            "in": "query",
+            "schema": {
+              "type": "number"
+            },
+            "required": false,
+            "description": "Altura/Espessura do material"
+          },
+          {
+            "name": "cavalete",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "required": false,
+            "description": "Número do cavalete"
+          },
+          {
+            "name": "quantidade",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "required": false,
+            "description": "Quantidade mínima de chapas no cavalete"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Requisição executada com sucesso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Cavalete"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "config.json#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/web/kanban/funis": {
+      "get": {
+        "tags": [
+          "Kanban"
+        ],
+        "summary": "Retorna os funis do kanban",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Requisição executada com sucesso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Funil"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "config.json#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/web/kanban/funis/{funil}/subfunis": {
+      "get": {
+        "tags": [
+          "Kanban"
+        ],
+        "summary": "Retorna os subfunis do funil",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "funil",
+            "in": "path",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true,
+            "description": "Código do funil"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Requisição executada com sucesso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/SubFunil"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "config.json#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/web/atividades/{codigo}": {
+      "get": {
+        "tags": [
+          "Atividades"
+        ],
+        "summary": "Retorna as atividades",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "config.json#/components/parameters/Codigo"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Requisição executada com sucesso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Atividade"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "config.json#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/web/atividades": {
+      "get": {
+        "tags": [
+          "Atividades"
+        ],
+        "summary": "Retorna as atividades",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "funil",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "required": false,
+            "description": "Código do funil"
+          },
+          {
+            "name": "subfunil",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "required": false,
+            "description": "Código do subfunil"
+          },
+          {
+            "name": "cliente",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "required": false,
+            "description": "Código do cliente"
+          },
+          {
+            "name": "situacao",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "description": "Situação"
+          },
+          {
+            "name": "data_inicial",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": false,
+            "description": "Data incial (Requer data final)"
+          },
+          {
+            "name": "data_final",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": false,
+            "description": "Data incial (Requer data inicial)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Requisição executada com sucesso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Atividade"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "config.json#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/web/atividades/{funil}": {
+      "post": {
+        "tags": [
+          "Atividades"
+        ],
+        "summary": "Cria uma nova atividade",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "funil",
+            "in": "path",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true,
+            "description": "Código do funil"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostAtividade"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "$ref": "config.json#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "config.json#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/web/atividades/{codigo}/avancar": {
+      "put": {
+        "tags": [
+          "Atividades"
+        ],
+        "summary": "Avança a atividade para o próximo subfunil",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "config.json#/components/parameters/Codigo"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "config.json#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "config.json#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/web/atividades/{codigo}/retornar": {
+      "put": {
+        "tags": [
+          "Atividades"
+        ],
+        "summary": "Retorna a atividade para o subfunil anterior",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "config.json#/components/parameters/Codigo"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "config.json#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "config.json#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/web/atividades/{codigo}/cancelar": {
+      "put": {
+        "tags": [
+          "Atividades"
+        ],
+        "summary": "Cancela a atividade",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "config.json#/components/parameters/Codigo"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "motivo": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "config.json#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "config.json#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/web/atividades/{codigo}/chapas/{chapa}": {
+      "put": {
+        "tags": [
+          "Atividades"
+        ],
+        "summary": "Cancela a atividade",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "config.json#/components/parameters/Codigo"
+          },
+          {
+            "name": "chapa",
+            "in": "path",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true,
+            "description": "Código da chapa"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "config.json#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "config.json#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/web/atividades/{codigo}/cavaletes/{cavalete}": {
+      "put": {
+        "tags": [
+          "Atividades"
+        ],
+        "summary": "Cancela a atividade",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "config.json#/components/parameters/Codigo"
+          },
+          {
+            "name": "cavalete",
+            "in": "path",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true,
+            "description": "Código do cavalete"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "config.json#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "config.json#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/web/atividades/{atividade}/tarefas": {
+      "get": {
+        "tags": [
+          "Tarefas"
+        ],
+        "summary": "Retorna as atividades",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "atividade",
+            "in": "path",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true,
+            "description": "Código da atividade"
+          },
+          {
+            "name": "responsavel",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "description": "Responsável pela atividade"
+          },
+          {
+            "name": "tipo",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "description": "Tipo de atividade"
+          },
+          {
+            "name": "situacao",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "description": "Situação da atividade"
+          },
+          {
+            "name": "data_inicial",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": false,
+            "description": "Data incial (Requer data final)"
+          },
+          {
+            "name": "data_final",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": false,
+            "description": "Data incial (Requer data inicial)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Requisição executada com sucesso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Tarefa"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "config.json#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Tarefas"
+        ],
+        "summary": "Cria uma nova tarefa",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "atividade",
+            "in": "path",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true,
+            "description": "Código da atividade"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostTarefa"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "$ref": "config.json#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "config.json#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/web/atividades/{atividade}/tarefas/{codigo}": {
+      "get": {
+        "tags": [
+          "Tarefas"
+        ],
+        "summary": "Retorna as atividades",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "atividade",
+            "in": "path",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true,
+            "description": "Código da atividade"
+          },
+          {
+            "$ref": "config.json#/components/parameters/Codigo"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Requisição executada com sucesso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Tarefa"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "config.json#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      },
+	  "delete": {
+        "tags": [
+          "Tarefas"
+        ],
+        "summary": "Excluir a tarefa",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "atividade",
+            "in": "path",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true,
+            "description": "Código da atividade"
+          },
+          {
+            "$ref": "config.json#/components/parameters/Codigo"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "config.json#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "config.json#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+	"/web/atividades/{atividade}/tarefas/{codigo}/finalizar": {
+      "put": {
+        "tags": [
+          "Tarefas"
+        ],
+        "summary": "Finaliza a tarefa",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "atividade",
+            "in": "path",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true,
+            "description": "Código da atividade"
+          },
+          {
+            "$ref": "config.json#/components/parameters/Codigo"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "config.json#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "config.json#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "config.json#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "config.json#/components/responses/InternalServerError"
+          }
+        }
+      }
+    }
+  }
+}

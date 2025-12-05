@@ -1,0 +1,871 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Schemas",
+    "version": "1.5.0"
+  },
+  "servers": [
+	{
+      "url": "https://api.redsis.com.br"
+    },
+    {
+      "url": "http://testeapi.redsis.com.br"
+    },
+    {
+      "url": "https://testeapi.redsis.com.br"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "noauthAuth": {
+        "type": "http",
+        "scheme": "noauth"
+      },
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      },
+      "basicAuth": {
+        "type": "http",
+        "scheme": "basic"
+      }
+    },
+    "responses": {
+      "Success": {
+        "description": "Requisição executada com sucesso",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Sucesso"
+            }
+          }
+        }
+      },
+      "Created": {
+        "description": "Recurso criado com sucesso",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Sucesso"
+            }
+          }
+        }
+      },
+      "BadRequest": {
+        "description": "Sintaxe inválida",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Erro"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Usuário não encontrado",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Erro"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "Sem autorização para o recurso",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Erro"
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "Recurso já utilizado",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Erro"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "O recurso não foi encontrado",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Erro"
+            }
+          }
+        }
+      },
+      "InternalServerError": {
+        "description": "Erro interno do servidor",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Erro"
+            }
+          }
+        }
+      }
+    },
+    "parameters": {
+      "Codigo": {
+        "name": "codigo",
+        "in": "path",
+        "schema": {
+          "type": "integer"
+        },
+        "description": "Código",
+        "required": true
+      }
+    },
+    "schemas": {
+      "FiltroFaturasTipo": {
+        "type": "string",
+        "enum": [
+          "pagar",
+          "receber"
+        ],
+        "description": "Filtro do tipo de faturas",
+        "default": "pagar"
+      },
+      "FiltroPeriodo": {
+        "type": "string",
+        "enum": [
+          "vencidos",
+          "ontem",
+          "hoje",
+          "amanha",
+          "semana",
+          "semana_seguinte",
+          "15_dias",
+          "mes",
+          "mes_seguinte",
+          "mes_anterior",
+          "nenhum"
+        ],
+        "description": "Filtro de período",
+        "default": "nenhum"
+      },
+      "FiltroSemana": {
+        "type": "string",
+        "enum": [
+          "segunda",
+          "terca",
+          "quarta",
+          "quinta",
+          "sexta",
+          "sabado",
+          "domingo",
+          "nenhum"
+        ],
+        "description": "Filtro de dia da semana",
+        "default": "nenhum"
+      },
+      "FiltroVencidos": {
+        "type": "string",
+        "enum": [
+          "ontem",
+          "7_dias",
+          "15_dias",
+          "30_dias",
+          "60_dias",
+          "90_dias",
+          "180_dias",
+          "360_dias",
+          "360_mais",
+          "nenhum"
+        ],
+        "description": "Filtro de dias de vencido",
+        "default": "nenhum"
+      },
+      "FiltroAtendimentos": {
+        "type": "string",
+        "enum": [
+          "cliente",
+          "atendente",
+          "direcionado",
+          "agendado",
+          "codigo",
+          "referencia",
+          "software",
+          "conteudo",
+          "assunto",
+          "tag",
+          "versao"
+        ],
+        "description": "Tipo do filtro"
+      },
+      "Erro": {
+        "type": "object",
+        "properties": {
+          "erro": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "erro"
+        ]
+      },
+      "Sucesso": {
+        "type": "object",
+        "properties": {
+          "result": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ]
+      },
+      "Atendimento": {
+        "type": "object",
+        "properties": {
+          "data_agendado": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "codigo": {
+            "type": "integer"
+          },
+          "data_criacao": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "data_abertura": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "data_atendimento": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "data_original": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "data_finalizacao": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "codpessoa": {
+            "type": "integer"
+          },
+          "pessoa": {
+            "type": "string"
+          },
+          "codatendpref": {
+            "type": "integer"
+          },
+          "atendpref": {
+            "type": "string"
+          },
+          "codatenddirec": {
+            "type": "integer"
+          },
+          "atenddirec": {
+            "type": "string"
+          },
+          "codusuag": {
+            "type": "integer"
+          },
+          "usuag": {
+            "type": "string"
+          },
+          "tipo": {
+            "type": "string"
+          },
+          "contato": {
+            "type": "string"
+          },
+          "telefone": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "codassunto": {
+            "type": "integer"
+          },
+          "assunto": {
+            "type": "string"
+          },
+          "observacao": {
+            "type": "string"
+          },
+          "prioridade": {
+            "type": "integer"
+          },
+          "origem": {
+            "type": "string"
+          },
+          "vip": {
+            "type": "integer"
+          },
+          "vinculado": {
+            "type": "integer"
+          },
+          "software": {
+            "type": "string"
+          },
+          "versao_copia": {
+            "type": "string"
+          },
+          "rastreio": {
+            "type": "integer"
+          },
+          "tags": {
+            "type": "string"
+          }
+        }
+      },
+      "AtendimentoAvaliacao": {
+        "type": "object",
+        "properties": {
+          "codigo": {
+            "type": "integer"
+          },
+          "data_abertura": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "data_finalizacao": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "atendpref": {
+            "type": "string"
+          },
+          "tipo": {
+            "type": "string"
+          },
+          "contato": {
+            "type": "string"
+          },
+          "telefone": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "codassunto": {
+            "type": "integer"
+          },
+          "assunto": {
+            "type": "string"
+          },
+          "avaliacoes": {
+            "type": "integer"
+          }
+        }
+      },
+      "AtendimentoCompleto": {
+        "type": "object",
+        "properties": {
+          "data_agendado": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "codigo": {
+            "type": "integer"
+          },
+          "data_criacao": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "data_abertura": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "data_atendimento": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "data_original": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "data_finalizacao": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "codpessoa": {
+            "type": "integer"
+          },
+          "pessoa": {
+            "type": "string"
+          },
+          "codatendpref": {
+            "type": "integer"
+          },
+          "atendpref": {
+            "type": "string"
+          },
+          "codatenddirec": {
+            "type": "integer"
+          },
+          "atenddirec": {
+            "type": "string"
+          },
+          "codusuag": {
+            "type": "integer"
+          },
+          "usuag": {
+            "type": "string"
+          },
+          "tipo": {
+            "type": "string"
+          },
+          "contato": {
+            "type": "string"
+          },
+          "telefone": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "codassunto": {
+            "type": "integer"
+          },
+          "assunto": {
+            "type": "string"
+          },
+          "observacao": {
+            "type": "string"
+          },
+          "prioridade": {
+            "type": "integer"
+          },
+          "origem": {
+            "type": "string"
+          },
+          "vip": {
+            "type": "integer"
+          },
+          "vinculado": {
+            "type": "integer"
+          },
+          "software": {
+            "type": "string"
+          },
+          "versao_copia": {
+            "type": "string"
+          },
+          "rastreio": {
+            "type": "integer"
+          },
+          "telefones": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "telefone": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "conteudos": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "codigo": {
+                  "type": "integer"
+                },
+                "titulo": {
+                  "type": "string"
+                },
+                "descricao": {
+                  "type": "string",
+                  "format": "byte"
+                }
+              }
+            }
+          },
+          "rastreios": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "codigo": {
+                  "type": "integer"
+                },
+                "descricao": {
+                  "type": "string"
+                },
+                "master": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      },
+      "PostAtendimento": {
+        "type": "object",
+        "properties": {
+          "cliente": {
+            "type": "integer"
+          },
+          "assunto": {
+            "type": "integer"
+          },
+          "prioridade": {
+            "type": "integer"
+          },
+          "tipo": {
+            "type": "string"
+          },
+          "contato": {
+            "type": "string"
+          },
+          "telefone": {
+            "type": "string"
+          },
+          "conteudo": {
+            "type": "string"
+          },
+          "origem": {
+            "type": "string"
+          },
+          "software": {
+            "type": "string"
+          },
+          "rastreio": {
+            "type": "integer"
+          }
+        }
+      },
+      "PutAtendimento": {
+        "type": "object",
+        "properties": {
+          "cliente": {
+            "type": "integer"
+          },
+          "assunto": {
+            "type": "integer"
+          },
+          "prioridade": {
+            "type": "integer"
+          },
+          "tipo": {
+            "type": "string"
+          },
+          "contato": {
+            "type": "string"
+          },
+          "software": {
+            "type": "string"
+          },
+          "rastreio": {
+            "type": "integer"
+          }
+        }
+      },
+      "PostAtendimentoExterno": {
+        "type": "object",
+        "properties": {
+          "cnpjcpf": {
+            "type": "string"
+          },
+          "assunto": {
+            "type": "integer"
+          },
+          "prioridade": {
+            "type": "integer"
+          },
+          "tipo": {
+            "type": "string"
+          },
+          "contato": {
+            "type": "string"
+          },
+          "telefone": {
+            "type": "string"
+          },
+          "conteudo": {
+            "type": "string"
+          },
+          "origem": {
+            "type": "string"
+          },
+          "software": {
+            "type": "string"
+          }
+        }
+      },
+      "GetEstoque": {
+        "type": "object",
+        "properties": {
+          "codigo": {
+            "type": "integer"
+          },
+          "codigo_interno": {
+            "type": "string"
+          },
+          "gtin": {
+            "type": "string"
+          },
+          "nome": {
+            "type": "string"
+          },
+          "un": {
+            "type": "string"
+          },
+          "tipo_un": {
+            "type": "string"
+          },
+          "preco_venda": {
+            "type": "number",
+            "format": "double"
+          },
+          "preco_promocional": {
+            "type": "number",
+            "format": "double"
+          },
+          "preco_tab1": {
+            "type": "number",
+            "format": "double"
+          },
+          "preco_tab2": {
+            "type": "number",
+            "format": "double"
+          },
+          "preco_tab3": {
+            "type": "number",
+            "format": "double"
+          },
+          "indice_promocional": {
+            "type": "number",
+            "format": "double"
+          },
+          "indice_tab1": {
+            "type": "number",
+            "format": "double"
+          },
+          "indice_tab2": {
+            "type": "number",
+            "format": "double"
+          },
+          "indice_tab3": {
+            "type": "number",
+            "format": "double"
+          },
+          "estoque": {
+            "type": "number",
+            "format": "float"
+          },
+          "aliquota_ipi": {
+            "type": "number",
+            "format": "double"
+          },
+		  "peso_bruto": {
+            "type": "number",
+            "format": "float"
+          },
+          "empresa": {
+            "type": "integer"
+          }
+        }
+      },
+      "Arquivo": {
+        "type": "object",
+        "properties": {
+          "nome": {
+            "type": "string"
+          },
+          "tamanho": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "data": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Pasta": {
+        "type": "object",
+        "properties": {
+          "nome": {
+            "type": "string"
+          }
+        }
+      },
+      "ArquivosPastas": {
+        "type": "object",
+        "properties": {
+          "arquivos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Arquivo"
+            }
+          },
+          "pastas": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Pasta"
+            }
+          }
+        }
+      },
+      "Faq": {
+        "type": "object",
+        "properties": {
+          "codigo": {
+            "type": "integer"
+          },
+          "titulo": {
+            "type": "string"
+          },
+          "descricao": {
+            "type": "string"
+          },
+          "tipo": {
+            "type": "string"
+          },
+          "rastreio": {
+            "type": "integer"
+          },
+          "data": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "criadopor": {
+            "type": "integer"
+          },
+          "aprovadopor": {
+            "type": "integer"
+          },
+          "versao": {
+            "type": "string"
+          },
+          "privado": {
+            "type": "string"
+          }
+        }
+      },
+      "PostFaq": {
+        "type": "object",
+        "properties": {
+          "titulo": {
+            "type": "string"
+          },
+          "conteudo": {
+            "type": "string"
+          },
+          "tipo": {
+            "type": "string",
+            "maxLength": 1
+          },
+          "rastreio": {
+            "type": "integer"
+          },
+          "versao": {
+            "type": "string"
+          },
+          "privado": {
+            "type": "boolean"
+          }
+        }
+      },
+      "Token": {
+        "type": "object",
+        "properties": {
+          "usuario": {
+            "type": "string"
+          },
+          "senha": {
+            "type": "string"
+          },
+          "app": {
+            "type": "string",
+            "enum": [
+              "atendimentos",
+              "videos",
+              "redsis",
+              "tecnica",
+              "externo",
+              "anexossac",
+              "relmaker"
+            ]
+          }
+        },
+        "required": [
+          "usuario",
+          "senha",
+          "app"
+        ],
+        "examples": {
+          "usuario": "",
+          "senha": "",
+          "app": ""
+        }
+      },
+      "TokenMobile": {
+        "type": "object",
+        "properties": {
+          "usuario": {
+            "type": "string"
+          },
+          "senha": {
+            "type": "string"
+          },
+          "app": {
+            "type": "string",
+            "enum": [
+              "rochas",
+              "financeiro",
+              "comercio"
+            ]
+          },
+          "servidor": {
+            "type": "string"
+          },
+          "porta": {
+            "type": "string"
+          },
+          "natureza": {
+            "type": "string"
+          },
+          "empresa": {
+            "type": "string"
+          },
+          "guid": {
+            "type": "string"
+          },
+          "fcm": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "usuario",
+          "senha",
+          "app",
+          "servidor",
+          "porta",
+          "natureza",
+          "empresa"
+        ],
+        "examples": {
+          "usuario": "",
+          "senha": "",
+          "app": "",
+          "servidor": "",
+          "porta": "",
+          "natureza": "",
+          "empresa": "1",
+          "guid": "",
+          "fcm": ""
+        }
+      }
+    }
+  }
+}

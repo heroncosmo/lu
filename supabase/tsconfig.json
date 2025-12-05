@@ -1,0 +1,13 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "types": ["../global.d.ts"],
+    "allowJs": true,
+    "lib": ["deno.window"]
+  },
+  "include": [
+    "**/*.ts",
+    "../global.d.ts"
+  ],
+  "exclude": ["../node_modules"]
+}
