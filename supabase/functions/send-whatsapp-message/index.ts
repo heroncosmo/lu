@@ -22,10 +22,6 @@ serve(async (req) => {
     return new Response("ok", { headers: corsHeaders, status: 200 });
   }
 
-  // Declarar sessionData no escopo externo para acessar no catch
-  let sessionData: any = null;
-  let isNewSession = false;
-
   try {
     console.log("=== INICIANDO FUNÇÃO SEND-WHATSAPP-MESSAGE (API OFICIAL) ===");
     
@@ -113,11 +109,12 @@ serve(async (req) => {
       .limit(1)
       .maybeSingle();
 
+    let sessionData;
+    
     if (existingSession) {
       // Reutilizar sessão existente
       console.log(`✅ Sessão existente encontrada: ${existingSession.id}`);
       sessionData = existingSession;
-      isNewSession = false;
       
       // Atualizar sessão com dados da campanha se necessário
       if (campaign_id && !existingSession.campaign_id) {
@@ -149,7 +146,6 @@ serve(async (req) => {
         throw new Error("Erro ao criar sessão: " + sessionError.message);
       }
       sessionData = newSessionData;
-      isNewSession = true;
       console.log(`✅ Nova sessão criada: ${sessionData.id}`);
     }
 
@@ -259,16 +255,6 @@ IMPORTANTE: Sua personalidade e forma de falar devem seguir EXATAMENTE as instru
 Exemplo de formato:
 Oi ${client_name}! Vi seu perfil e achei interessante seu trabalho. Gostaria de saber se você tem interesse em uma solução que pode ajudar a otimizar seus resultados. Podemos conversar 5 minutos sobre isso?`;
 
-    // GPT-5.x, GPT-4.1 e o-series usam max_completion_tokens, modelos antigos usam max_tokens
-    const isNewModel = gptModel.startsWith('gpt-5') || gptModel.startsWith('gpt-4.1') || gptModel.startsWith('o3') || gptModel.startsWith('o4');
-    const tokenParam = isNewModel ? { max_completion_tokens: 200 } : { max_tokens: 200 };
-    // GPT-5 e o-series não suportam temperature diferente de 1
-    const temperatureParam = isNewModel ? {} : { temperature: 0.8 };
-    
-    console.log(`=== PARÂMETROS DA API OPENAI ===`);
-    console.log(`Modelo: ${gptModel}, isNewModel: ${isNewModel}`);
-    console.log(`Token param:`, tokenParam);
-    
     const openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -281,8 +267,8 @@ Oi ${client_name}! Vi seu perfil e achei interessante seu trabalho. Gostaria de 
           { role: "system", content: systemPrompt },
           { role: "user", content: `Gere uma mensagem inicial de prospecção para ${client_name} seguindo todas as regras acima.` }
         ],
-        ...temperatureParam,
-        ...tokenParam,
+        max_tokens: 200,
+        temperature: 0.8,
       }),
     });
 
@@ -321,21 +307,13 @@ Oi ${client_name}! Vi seu perfil e achei interessante seu trabalho. Gostaria de 
     console.log("=== MENSAGEM FORMATADA (ÚNICO PARÁGRAFO) ===");
     console.log(initialMessage);
 
-    // === CORREÇÃO DA API W-API (formato original que funcionava) ===
-    // URL: https://api.w-api.app/v1/message/send-text?instanceId=X
-    // Body: { phone, message, delayMessage }
+    // === API W-API (formato que funciona com api.w-api.app) ===
+    // URL: https://api.w-api.app/v1/message/send-text?instanceId=X&phone=Y
     // Autenticação: Bearer token no header
-    const whatsappApiUrl = `https://api.w-api.app/v1/message/send-text?instanceId=${WHATSAPP_INSTANCE_ID}`;
-    
-    // Formatar número (remover @c.us se existir)
-    const formattedNumber = client_whatsapp_number.includes('@') 
-      ? client_whatsapp_number.replace('@c.us', '') 
-      : client_whatsapp_number;
+    const whatsappApiUrl = `https://api.w-api.app/v1/message/send-text?instanceId=${WHATSAPP_INSTANCE_ID}&phone=${client_whatsapp_number}`;
     
     const requestBody = {
-      phone: formattedNumber,
-      message: initialMessage,
-      delayMessage: 2
+      message: initialMessage
     };
 
     const fetchOptions: RequestInit = {
@@ -348,7 +326,6 @@ Oi ${client_name}! Vi seu perfil e achei interessante seu trabalho. Gostaria de 
     };
 
     console.log(`Enviando mensagem para: ${whatsappApiUrl}`);
-    console.log("Instance ID:", WHATSAPP_INSTANCE_ID);
     console.log("Token (primeiros 10 chars):", WHATSAPP_TOKEN.substring(0, 10));
     console.log("Corpo da requisição:", requestBody);
 
@@ -472,23 +449,6 @@ Oi ${client_name}! Vi seu perfil e achei interessante seu trabalho. Gostaria de 
         
   } catch (error) {
     console.error("=== ERRO NÃO TRATADO ===:", error);
-    
-    // Se uma NOVA sessão foi criada durante esta execução e houve erro,
-    // deletar a sessão para não deixar sessões órfãs
-    if (isNewSession && sessionData?.id) {
-      try {
-        const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-        const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-        const cleanupClient = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
-        
-        // Deletar a sessão que foi criada mas falhou
-        await cleanupClient.from("prospecting_sessions").delete().eq("id", sessionData.id);
-        console.log(`🗑️ Sessão ${sessionData.id} deletada após erro`);
-      } catch (cleanupError) {
-        console.error("Erro ao limpar sessão órfã:", cleanupError);
-      }
-    }
-    
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 500,
