@@ -97,6 +97,13 @@ const ALL_NAV_SECTIONS: NavSection[] = [
         permissionKey: 'campaigns',
       },
       {
+        title: 'Playground',
+        href: '/prospecting',
+        icon: Phone,
+        description: 'Playground de testes',
+        permissionKey: 'playground',
+      },
+      {
         title: 'Kanban',
         href: '/kanban',
         icon: FolderKanban,
@@ -106,7 +113,7 @@ const ALL_NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
-    title: 'Comunicação',
+    title: 'Configurações',
     items: [
       {
         title: 'WhatsApp',
@@ -115,18 +122,6 @@ const ALL_NAV_SECTIONS: NavSection[] = [
         description: 'Instâncias WhatsApp',
         permissionKey: 'whatsapp',
       },
-      {
-        title: 'Playground',
-        href: '/prospecting',
-        icon: Phone,
-        description: 'Playground de testes',
-        permissionKey: 'playground',
-      },
-    ],
-  },
-  {
-    title: 'Configurações',
-    items: [
       {
         title: 'Usuários',
         href: '/user-management',

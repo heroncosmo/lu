@@ -12,6 +12,7 @@ export interface UserPermissions {
   kanban: boolean;
   whatsapp: boolean;
   playground: boolean;
+  create_prospecting: boolean;
   agents: boolean;
   webhooks: boolean;
   redsis: boolean;
@@ -32,6 +33,7 @@ export const DEFAULT_PERMISSIONS: UserPermissions = {
   kanban: true,
   whatsapp: true,
   playground: true,
+  create_prospecting: true,
   agents: true,
   webhooks: true,
   redsis: true,

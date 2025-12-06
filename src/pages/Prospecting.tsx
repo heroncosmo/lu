@@ -13,6 +13,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { toast } from 'sonner';
 import { Loader2, AlertCircle, Wifi, WifiOff, X, RotateCcw, Brain } from 'lucide-react';
+import { useUserProfile } from '@/hooks/useUserProfile';
 
 type Agent = { id: string; name: string; gpt_model?: string };
 type WhatsAppInstance = { id: string; name: string; phone_number: string | null; status: string; };
@@ -28,6 +29,7 @@ const prospectingSchema = z.object({
 });
 
 const Prospecting = () => {
+  const { hasPermission } = useUserProfile();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [whatsappInstances, setWhatsappInstances] = useState<WhatsAppInstance[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -53,13 +55,10 @@ const Prospecting = () => {
 
   const fetchAgents = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      
+      // Buscar todos os agentes ativos (compartilhados entre usuários)
       const { data, error } = await supabase
         .from('agents')
         .select('id, name, gpt_model')
-        .eq('user_id', user.id)
         .eq('is_active', true);
       if (error) {
         toast.error("Erro ao carregar agentes: " + error.message);
@@ -616,8 +615,9 @@ const Prospecting = () => {
               
               <Button 
                 type="submit" 
-                disabled={isSubmitting || agents.length === 0} 
+                disabled={isSubmitting || agents.length === 0 || !hasPermission('create_prospecting')} 
                 className="w-full"
+                title={!hasPermission('create_prospecting') ? 'Você não tem permissão para criar prospecções' : ''}
               >
                 {isSubmitting && (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" /> 

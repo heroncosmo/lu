@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -32,7 +32,7 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useForm } from 'react-hook-form';
-import { Plus, Trash2, Edit, CheckCircle, XCircle } from 'lucide-react';
+import { Plus, Trash2, Edit, CheckCircle, XCircle, QrCode, Unplug, RefreshCw, Loader2 } from 'lucide-react';
 import BackToHomeButton from '@/components/BackToHomeButton';
 
 interface WhatsAppInstance {
@@ -68,6 +68,80 @@ export default function WhatsAppInstances() {
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; instance: WhatsAppInstance | null }>({
     open: false, instance: null
   });
+  const [qrCodeDialog, setQrCodeDialog] = useState<{ open: boolean; instance: WhatsAppInstance | null; qrCode: string | null; loading: boolean }>({
+    open: false, instance: null, qrCode: null, loading: false
+  });
+  const [disconnectConfirm, setDisconnectConfirm] = useState<{ open: boolean; instance: WhatsAppInstance | null }>({
+    open: false, instance: null
+  });
+  const [refreshingStatus, setRefreshingStatus] = useState<string | null>(null);
+  const [checkingConnection, setCheckingConnection] = useState(false);
+
+  // Polling para verificar conexão após escanear QR Code
+  useEffect(() => {
+    if (!qrCodeDialog.open || !qrCodeDialog.instance || qrCodeDialog.loading) {
+      return;
+    }
+
+    let isCancelled = false;
+    let pollCount = 0;
+    const maxPolls = 60; // 60 * 3s = 180s = 3 minutos máximo
+
+    const checkConnection = async () => {
+      if (isCancelled || pollCount >= maxPolls) return;
+      
+      pollCount++;
+      setCheckingConnection(true);
+      
+      try {
+        const instance = qrCodeDialog.instance!;
+        const status = await checkInstanceStatus(instance.instance_id, instance.token);
+        
+        console.log(`Polling conexão (${pollCount}/${maxPolls}):`, status);
+        
+        if (status === 'connected' && !isCancelled) {
+          // Conectou! Atualizar banco e fechar diálogo
+          await supabase
+            .from('whatsapp_instances')
+            .update({ 
+              status: 'connected',
+              last_connection_check: new Date().toISOString()
+            })
+            .eq('id', instance.id);
+          
+          queryClient.invalidateQueries({ queryKey: ['whatsapp-instances'] });
+          
+          setQrCodeDialog({ open: false, instance: null, qrCode: null, loading: false });
+          setCheckingConnection(false);
+          
+          toast({
+            title: '✅ Conectado!',
+            description: `A instância "${instance.name}" foi conectada com sucesso!`,
+          });
+          
+          return; // Para o polling
+        }
+      } catch (error) {
+        console.error('Erro no polling de conexão:', error);
+      }
+      
+      setCheckingConnection(false);
+      
+      // Continuar polling a cada 3 segundos
+      if (!isCancelled && pollCount < maxPolls) {
+        setTimeout(checkConnection, 3000);
+      }
+    };
+
+    // Iniciar polling após 2 segundos (dar tempo para escanear)
+    const initialDelay = setTimeout(checkConnection, 2000);
+
+    return () => {
+      isCancelled = true;
+      clearTimeout(initialDelay);
+      setCheckingConnection(false);
+    };
+  }, [qrCodeDialog.open, qrCodeDialog.instance?.id, qrCodeDialog.loading]);
 
   const form = useForm<InstanceFormData>({
     defaultValues: {
@@ -85,16 +159,180 @@ export default function WhatsAppInstances() {
   const checkInstanceStatus = async (instanceId: string, token: string) => {
     try {
       const response = await fetch(
-        `https://api.w-api.app/get-status?instance_id=${instanceId}&token=${token}`
+        `https://api.w-api.app/v1/instance/status-instance?instanceId=${instanceId}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
       );
-      const data = await response.json();
       
-      // API retorna { status: "connected" } ou { status: "disconnected" }
-      return data.status === 'connected' ? 'connected' : 'disconnected';
+      if (!response.ok) {
+        console.error('Erro na resposta da API:', response.status);
+        return 'disconnected';
+      }
+      
+      const data = await response.json();
+      console.log('Status da instância:', data);
+      
+      // Verifica se está conectado baseado na resposta da API
+      if (data.connected === true) {
+        return 'connected';
+      }
+      return 'disconnected';
     } catch (error) {
       console.error('Erro ao verificar status:', error);
       return 'disconnected';
     }
+  };
+
+  // Obter QR Code para conectar
+  const getQrCode = async (instanceId: string, token: string) => {
+    try {
+      // Endpoint correto: qr-code com parâmetro image=disable para retornar base64
+      const response = await fetch(
+        `https://api.w-api.app/v1/instance/qr-code?instanceId=${instanceId}&image=disable`,
+        {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      
+      console.log('QR Code response status:', response.status);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Erro ao obter QR Code:', response.status, errorText);
+        return null;
+      }
+      
+      const data = await response.json();
+      console.log('Resposta QR Code:', data);
+      
+      // Retorna base64 do QR code - verificar várias possíveis propriedades
+      return data.qrcode || data.base64 || data.qr || data.qrCode || data.data?.qrcode || data.data?.base64 || null;
+    } catch (error) {
+      console.error('Erro ao obter QR Code:', error);
+      return null;
+    }
+  };
+
+  // Desconectar instância
+  const disconnectInstance = async (instanceId: string, token: string) => {
+    try {
+      // Endpoint correto: disconnect com método GET
+      const response = await fetch(
+        `https://api.w-api.app/v1/instance/disconnect?instanceId=${instanceId}`,
+        {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      
+      console.log('Disconnect response status:', response.status);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Erro ao desconectar:', response.status, errorText);
+        return false;
+      }
+      
+      const data = await response.json();
+      console.log('Resposta disconnect:', data);
+      return true;
+    } catch (error) {
+      console.error('Erro ao desconectar:', error);
+      return false;
+    }
+  };
+
+  // Atualizar status de uma instância específica
+  const refreshInstanceStatus = async (instance: WhatsAppInstance) => {
+    setRefreshingStatus(instance.id);
+    try {
+      const realStatus = await checkInstanceStatus(instance.instance_id, instance.token);
+      
+      // Atualizar no banco
+      await supabase
+        .from('whatsapp_instances')
+        .update({ 
+          status: realStatus,
+          last_connection_check: new Date().toISOString()
+        })
+        .eq('id', instance.id);
+      
+      // Invalidar cache para forçar refetch
+      queryClient.invalidateQueries({ queryKey: ['whatsapp-instances'] });
+      
+      toast({
+        title: 'Status atualizado',
+        description: `A instância está ${realStatus === 'connected' ? 'conectada' : 'desconectada'}.`,
+      });
+    } catch (error) {
+      toast({
+        title: 'Erro',
+        description: 'Não foi possível verificar o status.',
+        variant: 'destructive',
+      });
+    } finally {
+      setRefreshingStatus(null);
+    }
+  };
+
+  // Handler para abrir QR Code
+  const handleShowQrCode = async (instance: WhatsAppInstance) => {
+    setQrCodeDialog({ open: true, instance, qrCode: null, loading: true });
+    
+    const qrCode = await getQrCode(instance.instance_id, instance.token);
+    
+    if (qrCode) {
+      setQrCodeDialog({ open: true, instance, qrCode, loading: false });
+    } else {
+      setQrCodeDialog({ open: false, instance: null, qrCode: null, loading: false });
+      toast({
+        title: 'QR Code indisponível',
+        description: 'A instância já pode estar conectada ou houve um erro. Verifique o status.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  // Handler para desconectar
+  const handleDisconnect = async (instance: WhatsAppInstance) => {
+    const success = await disconnectInstance(instance.instance_id, instance.token);
+    
+    if (success) {
+      // Atualizar status no banco
+      await supabase
+        .from('whatsapp_instances')
+        .update({ 
+          status: 'disconnected',
+          last_connection_check: new Date().toISOString()
+        })
+        .eq('id', instance.id);
+      
+      queryClient.invalidateQueries({ queryKey: ['whatsapp-instances'] });
+      
+      toast({
+        title: 'Desconectado',
+        description: 'A instância WhatsApp foi desconectada com sucesso.',
+      });
+    } else {
+      toast({
+        title: 'Erro',
+        description: 'Não foi possível desconectar a instância.',
+        variant: 'destructive',
+      });
+    }
+    
+    setDisconnectConfirm({ open: false, instance: null });
   };
 
   // Buscar instâncias e verificar status real
@@ -452,6 +690,20 @@ export default function WhatsAppInstances() {
                     <div className="flex items-center justify-between">
                       <span className="text-muted-foreground">Status:</span>
                       <div className="flex items-center gap-2">
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-6 w-6"
+                          onClick={() => refreshInstanceStatus(instance)}
+                          disabled={refreshingStatus === instance.id}
+                          title="Atualizar status"
+                        >
+                          {refreshingStatus === instance.id ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <RefreshCw className="h-3 w-3" />
+                          )}
+                        </Button>
                         {instance.status === 'connected' ? (
                           <CheckCircle className="h-4 w-4 text-green-500" />
                         ) : (
@@ -478,6 +730,31 @@ export default function WhatsAppInstances() {
                       <p className="text-xs text-muted-foreground truncate">
                         Instance: {instance.instance_id}
                       </p>
+                    </div>
+
+                    {/* Botões de Ação */}
+                    <div className="pt-3 border-t flex gap-2">
+                      {instance.status !== 'connected' ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="flex-1"
+                          onClick={() => handleShowQrCode(instance)}
+                        >
+                          <QrCode className="h-4 w-4 mr-2" />
+                          Conectar
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="flex-1 text-destructive hover:text-destructive"
+                          onClick={() => setDisconnectConfirm({ open: true, instance })}
+                        >
+                          <Unplug className="h-4 w-4 mr-2" />
+                          Desconectar
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </CardContent>
@@ -518,6 +795,95 @@ export default function WhatsAppInstances() {
         }}
         isLoading={deleteMutation.isPending}
       />
+
+      {/* Dialog de Confirmação de Desconexão */}
+      <ConfirmDialog
+        open={disconnectConfirm.open}
+        onOpenChange={(open) => setDisconnectConfirm({ ...disconnectConfirm, open })}
+        title="Desconectar WhatsApp?"
+        description={`Deseja desconectar a instância "${disconnectConfirm.instance?.name}"?\n\nVocê precisará escanear o QR Code novamente para reconectar.`}
+        confirmText="Sim, Desconectar"
+        cancelText="Cancelar"
+        variant="warning"
+        onConfirm={() => {
+          if (disconnectConfirm.instance) {
+            handleDisconnect(disconnectConfirm.instance);
+          }
+        }}
+      />
+
+      {/* Dialog do QR Code */}
+      <Dialog open={qrCodeDialog.open} onOpenChange={(open) => {
+        if (!open) setQrCodeDialog({ open: false, instance: null, qrCode: null, loading: false });
+      }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <QrCode className="h-5 w-5" />
+              Conectar WhatsApp
+            </DialogTitle>
+            <DialogDescription>
+              Escaneie o QR Code com seu WhatsApp para conectar a instância "{qrCodeDialog.instance?.name}"
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex flex-col items-center justify-center py-6">
+            {qrCodeDialog.loading ? (
+              <div className="flex flex-col items-center gap-4">
+                <Loader2 className="h-12 w-12 animate-spin text-primary" />
+                <p className="text-sm text-muted-foreground">Gerando QR Code...</p>
+              </div>
+            ) : qrCodeDialog.qrCode ? (
+              <div className="flex flex-col items-center gap-4">
+                <div className="p-4 bg-white rounded-lg shadow-inner">
+                  <img 
+                    src={qrCodeDialog.qrCode.startsWith('data:') ? qrCodeDialog.qrCode : `data:image/png;base64,${qrCodeDialog.qrCode}`}
+                    alt="QR Code WhatsApp"
+                    className="w-64 h-64"
+                  />
+                </div>
+                <div className="text-center space-y-2">
+                  <p className="text-sm font-medium">Instruções:</p>
+                  <ol className="text-sm text-muted-foreground text-left list-decimal list-inside space-y-1">
+                    <li>Abra o WhatsApp no seu celular</li>
+                    <li>Toque em Menu ou Configurações</li>
+                    <li>Toque em "Dispositivos conectados"</li>
+                    <li>Toque em "Conectar um dispositivo"</li>
+                    <li>Escaneie este QR Code</li>
+                  </ol>
+                </div>
+                
+                {/* Indicador de verificação automática */}
+                <div className="flex items-center gap-2 p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-800">
+                  <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+                  <span className="text-sm text-blue-700 dark:text-blue-300">
+                    {checkingConnection ? 'Verificando conexão...' : 'Aguardando leitura do QR Code...'}
+                  </span>
+                </div>
+                
+                <Button
+                  variant="outline"
+                  onClick={() => handleShowQrCode(qrCodeDialog.instance!)}
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Gerar Novo QR Code
+                </Button>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-4">
+                <XCircle className="h-12 w-12 text-destructive" />
+                <p className="text-sm text-muted-foreground">Não foi possível gerar o QR Code</p>
+                <Button
+                  variant="outline"
+                  onClick={() => handleShowQrCode(qrCodeDialog.instance!)}
+                >
+                  Tentar Novamente
+                </Button>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

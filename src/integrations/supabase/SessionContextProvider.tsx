@@ -11,6 +11,7 @@ export interface UserPermissions {
   kanban: boolean;
   whatsapp: boolean;
   playground: boolean;
+  create_prospecting: boolean;
   agents: boolean;
   webhooks: boolean;
   redsis: boolean;

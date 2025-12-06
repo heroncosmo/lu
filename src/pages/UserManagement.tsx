@@ -69,6 +69,7 @@ const PERMISSION_LABELS: Record<keyof UserPermissions, { label: string; descript
   kanban: { label: 'Kanban', description: 'Pipeline de vendas', category: 'Vendas' },
   whatsapp: { label: 'WhatsApp', description: 'Instâncias WhatsApp', category: 'Comunicação' },
   playground: { label: 'Playground', description: 'Testes de prospecção', category: 'Comunicação' },
+  create_prospecting: { label: 'Criar Prospecção', description: 'Iniciar novas prospecções', category: 'Comunicação' },
   agents: { label: 'Agentes IA', description: 'Configurar agentes', category: 'Configurações' },
   webhooks: { label: 'Webhooks', description: 'Configurar webhooks', category: 'Configurações' },
   redsis: { label: 'Redsis API', description: 'Integração Redsis', category: 'Configurações' },
