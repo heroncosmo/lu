@@ -26,6 +26,7 @@ import {
   MessageCircle,
   UsersRound,
   ShieldCheck,
+  SettingsIcon,
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -307,6 +308,15 @@ export default function Layout({ children }: LayoutProps) {
               </div>
             </div>
           )}
+          <Link to="/user-settings" className="block">
+            <Button
+              variant="ghost"
+              className="w-full justify-start"
+            >
+              <SettingsIcon className="h-5 w-5" />
+              {sidebarOpen && <span className="ml-3">Configurações</span>}
+            </Button>
+          </Link>
           <Button
             variant="ghost"
             onClick={handleLogout}
@@ -393,6 +403,12 @@ export default function Layout({ children }: LayoutProps) {
                   </div>
                 </div>
               )}
+              <Link to="/user-settings" onClick={() => setMobileMenuOpen(false)} className="block">
+                <Button variant="ghost" className="w-full justify-start">
+                  <SettingsIcon className="h-5 w-5 mr-3" />
+                  Configurações
+                </Button>
+              </Link>
               <Button
                 variant="ghost"
                 onClick={handleLogout}

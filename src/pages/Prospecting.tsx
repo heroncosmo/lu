@@ -96,13 +96,11 @@ const Prospecting = () => {
 
   const fetchSessions = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      
+      // Buscar TODAS as sessões (sistema compartilhado entre usuários)
+      // RLS garante que apenas usuários ativos possam ver
       const { data, error } = await supabase
         .from('prospecting_sessions')
         .select('*')
-        .eq('user_id', user.id)
         .order('created_at', { ascending: false });
       
       if (error) {

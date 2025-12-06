@@ -26,6 +26,7 @@ import RedsisConfig from "./pages/RedsisConfig";
 import SMTPConfig from "./pages/SMTPConfig";
 import TwilioConfig from "./pages/TwilioConfig";
 import UserManagement from "./pages/UserManagement";
+import UserSettings from "./pages/UserSettings";
 import { SessionContextProvider } from "./integrations/supabase/SessionContextProvider";
 import ProtectedRoute from "./components/ProtectedRoute";
 
@@ -58,6 +59,7 @@ const App = () => (
               <Route element={<Layout><SMTPConfig /></Layout>} path="/smtp-config" />
               <Route element={<Layout><TwilioConfig /></Layout>} path="/twilio-config" />
               <Route element={<Layout><UserManagement /></Layout>} path="/user-management" />
+              <Route element={<Layout><UserSettings /></Layout>} path="/user-settings" />
               <Route element={<Layout><WebhookTest /></Layout>} path="/webhook-test" />
               <Route element={<Layout><Reports /></Layout>} path="/reports" />
               <Route element={<Layout><Inventory /></Layout>} path="/inventory" />
