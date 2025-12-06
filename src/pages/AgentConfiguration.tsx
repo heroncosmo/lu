@@ -392,10 +392,14 @@ const AgentConfiguration = () => {
     }]);
   };
 
-  // Handler para seleção de imagem
+  // Handler para seleção de imagem via input file
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    console.log('[handleImageSelect] Arquivo selecionado:', e.target.files);
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file) {
+      console.log('[handleImageSelect] Nenhum arquivo');
+      return;
+    }
     
     // Validar tipo de arquivo
     if (!file.type.startsWith('image/')) {
@@ -409,15 +413,69 @@ const AgentConfiguration = () => {
       return;
     }
     
+    console.log('[handleImageSelect] Convertendo para base64:', file.name, file.type, file.size);
+    
     // Converter para base64
     const reader = new FileReader();
     reader.onload = () => {
+      console.log('[handleImageSelect] Base64 pronto, tamanho:', (reader.result as string).length);
       setChatImage(reader.result as string);
+      toast.success('Imagem anexada com sucesso!');
+    };
+    reader.onerror = () => {
+      console.error('[handleImageSelect] Erro ao ler arquivo');
+      toast.error('Erro ao ler a imagem');
     };
     reader.readAsDataURL(file);
     
     // Limpar input para permitir selecionar a mesma imagem novamente
     e.target.value = '';
+  };
+
+  // Handler para colar imagem do clipboard (Ctrl+V)
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    
+    console.log('[handlePaste] Clipboard items:', items.length);
+    
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      console.log('[handlePaste] Item:', item.type, item.kind);
+      
+      if (item.type.startsWith('image/')) {
+        e.preventDefault(); // Prevenir paste de texto
+        
+        const file = item.getAsFile();
+        if (!file) {
+          console.log('[handlePaste] Não conseguiu obter arquivo');
+          continue;
+        }
+        
+        console.log('[handlePaste] Imagem encontrada no clipboard:', file.type, file.size);
+        
+        // Validar tamanho
+        if (file.size > 20 * 1024 * 1024) {
+          toast.error('A imagem deve ter no máximo 20MB');
+          return;
+        }
+        
+        // Converter para base64
+        const reader = new FileReader();
+        reader.onload = () => {
+          console.log('[handlePaste] Base64 pronto, tamanho:', (reader.result as string).length);
+          setChatImage(reader.result as string);
+          toast.success('🖼️ Print colado com sucesso!');
+        };
+        reader.onerror = () => {
+          console.error('[handlePaste] Erro ao ler imagem do clipboard');
+          toast.error('Erro ao processar a imagem');
+        };
+        reader.readAsDataURL(file);
+        
+        return; // Só processar a primeira imagem
+      }
+    }
   };
 
   const sendChatMessage = async () => {
@@ -1547,13 +1605,14 @@ ${successCount === totalTests ? '✅ Todas as edições preservaram o documento!
                     <Input
                       value={chatInput}
                       onChange={(e) => setChatInput(e.target.value)}
-                      placeholder={chatImage ? "Descreva o que quer calibrar com base na imagem..." : "O que você quer melhorar no prompt?"}
+                      placeholder={chatImage ? "Descreva o que quer calibrar com base na imagem..." : "O que você quer melhorar no prompt? (Cole prints com Ctrl+V)"}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' && !e.shiftKey) {
                           e.preventDefault();
                           sendChatMessage();
                         }
                       }}
+                      onPaste={handlePaste}
                       disabled={isAiLoading || !form.getValues('gpt_api_key')}
                     />
                     <Button 

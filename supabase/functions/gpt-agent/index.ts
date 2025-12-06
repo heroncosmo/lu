@@ -31,8 +31,10 @@ serve(async (req) => {
   try {
     console.log("=== INICIANDO FUNÇÃO GPT-AGENT ===");
     
-    const { session_id } = await req.json();
+    const requestBody = await req.json();
+    const { session_id, image_url } = requestBody;
     console.log("Session ID recebido:", session_id);
+    console.log("Imagem recebida:", image_url ? "Sim (Vision mode)" : "Não");
     
     if (!session_id) {
       throw new Error("session_id is required");
@@ -237,15 +239,45 @@ Que bom ouvir isso, Rodrigo! Tudo tranquilo por aqui também, graças a Deus. Co
     // Construir o histórico da conversa para o GPT
     const formattedMessages: any[] = [
       { role: systemRole, content: systemPrompt },
-      ...messages.map((msg: any) => ({
-        role: msg.sender === "agent" ? "assistant" : "user",
-        content: msg.message_content,
-      })),
     ];
+    
+    // Adicionar mensagens do histórico
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i];
+      const isLastMessage = i === messages.length - 1;
+      const isUserMessage = msg.sender !== "agent";
+      
+      // Se é a última mensagem do usuário e temos uma imagem, usar formato Vision
+      if (isLastMessage && isUserMessage && image_url) {
+        console.log("📸 Adicionando imagem à última mensagem do usuário (Vision mode)");
+        formattedMessages.push({
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: msg.message_content
+            },
+            {
+              type: "image_url",
+              image_url: { url: image_url }
+            }
+          ]
+        });
+      } else {
+        // Mensagem normal (texto)
+        formattedMessages.push({
+          role: isUserMessage ? "user" : "assistant",
+          content: msg.message_content,
+        });
+      }
+    }
 
     console.log("=== MENSAGENS FORMATADAS PARA O GPT ===");
     console.log("Número de mensagens formatadas:", formattedMessages.length);
-    console.log("Última mensagem do usuário:", formattedMessages[formattedMessages.length - 1]?.content);
+    console.log("Modo Vision:", image_url ? "Ativado" : "Desativado");
+    console.log("Última mensagem do usuário:", typeof formattedMessages[formattedMessages.length - 1]?.content === 'string' 
+      ? formattedMessages[formattedMessages.length - 1]?.content 
+      : "[Mensagem com imagem]");
 
     // Simular tempo de leitura antes de gerar resposta
     console.log(`=== SIMULANDO TEMPO DE LEITURA ===`);

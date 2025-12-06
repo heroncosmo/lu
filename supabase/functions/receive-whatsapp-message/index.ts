@@ -15,6 +15,151 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "content-type, authorization, x-client-info, apikey",
 };
 
+// Transcrever áudio usando Whisper API
+async function transcribeAudio(audioUrl: string, apiKey: string): Promise<string> {
+  console.log("🎤 Transcrevendo áudio com Whisper API...");
+  
+  try {
+    // Baixar o áudio
+    const audioResponse = await fetch(audioUrl);
+    if (!audioResponse.ok) {
+      throw new Error("Falha ao baixar áudio");
+    }
+    const audioBlob = await audioResponse.blob();
+    
+    // Criar FormData para enviar ao Whisper
+    const formData = new FormData();
+    formData.append('file', audioBlob, 'audio.ogg');
+    formData.append('model', 'whisper-1');
+    formData.append('language', 'pt'); // Português como padrão
+    
+    const whisperResponse = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: formData,
+    });
+    
+    if (!whisperResponse.ok) {
+      const error = await whisperResponse.text();
+      console.error("Erro Whisper:", error);
+      throw new Error("Falha na transcrição");
+    }
+    
+    const result = await whisperResponse.json();
+    console.log("✅ Áudio transcrito:", result.text);
+    return result.text;
+  } catch (error) {
+    console.error("Erro ao transcrever áudio:", error);
+    return "[Áudio não pôde ser transcrito]";
+  }
+}
+
+// Interpretar imagem usando GPT Vision
+async function interpretImage(imageUrl: string, caption: string | null, apiKey: string): Promise<string> {
+  console.log("🖼️ Interpretando imagem com GPT Vision...");
+  
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: caption 
+                  ? `O cliente enviou esta imagem com a legenda: "${caption}". Descreva brevemente o que você vê na imagem e o contexto da mensagem.`
+                  : 'O cliente enviou esta imagem sem legenda. Descreva brevemente o que você vê e qual pode ser a intenção do cliente.'
+              },
+              {
+                type: 'image_url',
+                image_url: { url: imageUrl }
+              }
+            ]
+          }
+        ],
+        max_tokens: 300,
+      }),
+    });
+    
+    if (!response.ok) {
+      const error = await response.text();
+      console.error("Erro GPT Vision:", error);
+      throw new Error("Falha na interpretação");
+    }
+    
+    const result = await response.json();
+    const description = result.choices[0]?.message?.content || "[Imagem não pôde ser interpretada]";
+    console.log("✅ Imagem interpretada:", description);
+    return description;
+  } catch (error) {
+    console.error("Erro ao interpretar imagem:", error);
+    return "[Imagem não pôde ser interpretada]";
+  }
+}
+
+// Baixar mídia via W-API
+async function downloadMediaFromWAPI(
+  messageId: string, 
+  instanceId: string, 
+  token: string
+): Promise<string | null> {
+  console.log("📥 Baixando mídia via W-API...");
+  
+  try {
+    // A W-API tem um endpoint para download de mídia
+    const response = await fetch(
+      `https://api.w-api.app/v1/message/download-media?instanceId=${instanceId}&messageId=${messageId}`,
+      {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      }
+    );
+    
+    if (!response.ok) {
+      console.error("Erro ao baixar mídia:", response.status, response.statusText);
+      // Tentar endpoint alternativo
+      const altResponse = await fetch(
+        `https://api.w-api.app/v1/misc/download-media?instanceId=${instanceId}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ messageId })
+        }
+      );
+      
+      if (!altResponse.ok) {
+        console.error("Erro no endpoint alternativo:", altResponse.status);
+        return null;
+      }
+      
+      const altData = await altResponse.json();
+      return altData.base64 ? `data:${altData.mimetype || 'application/octet-stream'};base64,${altData.base64}` : altData.url;
+    }
+    
+    const data = await response.json();
+    console.log("✅ Mídia baixada com sucesso");
+    // Retornar URL ou base64 dependendo do formato da resposta
+    return data.base64 ? `data:${data.mimetype || 'application/octet-stream'};base64,${data.base64}` : data.url;
+  } catch (error) {
+    console.error("Erro ao baixar mídia:", error);
+    return null;
+  }
+}
+
 // Buscar instância do banco de dados baseado no instance_id do webhook ou número de destino
 async function getWhatsAppInstance(supabaseAdmin: any, instanceIdFromWebhook?: string, phoneNumber?: string) {
   // Primeiro: tentar buscar por instance_id se fornecido no webhook
@@ -118,9 +263,15 @@ serve(async (req) => {
     // Extrair instance_id do webhook para multi-instance support
     const instanceIdFromWebhook = payload.instanceId || payload.instance_id || payload.data?.instanceId;
     const destPhoneNumber = payload.to || payload.destPhone; // número de destino se disponível
+    const messageId = payload.messageId || payload.message_id || payload.id?.id;
     
     let clientMessage = "";
     let messageType = "text"; // Tipo padrão
+    let mediaUrl: string | null = null; // URL da mídia para enviar ao GPT
+    let mediaBase64: string | null = null; // Base64 da mídia para enviar ao GPT Vision
+
+    // Obter OpenAI API Key
+    const openaiApiKey = Deno.env.get("OPENAI_API_KEY");
 
     // Extrair mensagem conforme o tipo
     if (payload.msgContent?.conversation) {
@@ -131,18 +282,47 @@ serve(async (req) => {
       // Mensagem de texto estendida
       clientMessage = payload.msgContent.extendedTextMessage.text;
       messageType = "text";
-    } else if (payload.msgContent?.imageMessage?.caption) {
-      // Imagem com legenda
-      clientMessage = payload.msgContent.imageMessage.caption;
-      messageType = "image";
     } else if (payload.msgContent?.imageMessage) {
-      // Imagem sem legenda
-      clientMessage = "[Imagem recebida]";
+      // Imagem (com ou sem legenda)
+      const caption = payload.msgContent.imageMessage.caption || "";
       messageType = "image";
+      clientMessage = caption ? `🖼️ [Imagem enviada] ${caption}` : "🖼️ [Imagem enviada pelo cliente]";
+      
+      // Baixar a imagem para enviar ao GPT Vision
+      if (instanceIdFromWebhook && messageId) {
+        console.log("📸 Baixando imagem para enviar ao GPT Vision...");
+        const instance = await getWhatsAppInstance(supabaseAdmin, instanceIdFromWebhook, destPhoneNumber);
+        if (instance) {
+          const downloadedUrl = await downloadMediaFromWAPI(messageId, instance.instance_id, instance.token);
+          if (downloadedUrl) {
+            mediaBase64 = downloadedUrl; // Pode ser URL ou base64
+            console.log("✅ Imagem baixada com sucesso para GPT Vision");
+          }
+        }
+      }
     } else if (payload.msgContent?.audioMessage) {
-      // Mensagem de áudio
-      clientMessage = "[Áudio recebido]";
+      // Mensagem de áudio - transcrever com Whisper (modelo mais barato)
+      // O texto transcrito será enviado ao modelo configurado pelo usuário
       messageType = "audio";
+      
+      if (openaiApiKey && instanceIdFromWebhook && messageId) {
+        console.log("🎤 Baixando e transcrevendo áudio com Whisper-1 (modelo mais barato)...");
+        const instance = await getWhatsAppInstance(supabaseAdmin, instanceIdFromWebhook, destPhoneNumber);
+        if (instance) {
+          const downloadedUrl = await downloadMediaFromWAPI(messageId, instance.instance_id, instance.token);
+          if (downloadedUrl) {
+            const transcription = await transcribeAudio(downloadedUrl, openaiApiKey);
+            clientMessage = `🎤 [Áudio transcrito]: "${transcription}"`;
+            console.log("✅ Áudio transcrito com Whisper-1:", transcription);
+          } else {
+            clientMessage = "🎤 [Áudio recebido - não foi possível baixar]";
+          }
+        } else {
+          clientMessage = "🎤 [Áudio recebido - instância não encontrada]";
+        }
+      } else {
+        clientMessage = "🎤 [Áudio recebido - transcrição não disponível]";
+      }
     } else {
       console.log("Tipo de mensagem não suportado:", payload.msgContent);
       clientMessage = "[Mensagem não suportada]";
@@ -153,6 +333,7 @@ serve(async (req) => {
     console.log("Número do cliente:", clientNumber);
     console.log("Mensagem do cliente:", clientMessage);
     console.log("Tipo de mensagem:", messageType);
+    console.log("Mídia disponível:", mediaBase64 ? "Sim (imagem)" : "Não");
 
     if (!clientNumber || !clientMessage) {
       console.error("Payload do webhook inválido. Campos ausentes:", { clientNumber, clientMessage });
@@ -411,8 +592,9 @@ Responda APENAS com: oferta, quente, morno ou frio`;
     }
 
     // === VERIFICAR SE DEVE GERAR RESPOSTA ===
-    // Não gerar resposta para mensagens de áudio, imagem ou tipos não suportados
-    if (messageType === "audio" || messageType === "image" || messageType === "unsupported") {
+    // Apenas mensagens não suportadas não geram resposta
+    // Áudio e imagem agora são processados normalmente
+    if (messageType === "unsupported") {
       console.log(`=== MENSAGEM DO TIPO ${messageType.toUpperCase()} - NÃO GERAR RESPOSTA ===`);
       
       // Apenas retornar sucesso sem gerar resposta
@@ -428,10 +610,52 @@ Responda APENAS com: oferta, quente, morno ou frio`;
       });
     }
 
-    // Chamar a função GPT para gerar resposta (apenas para mensagens de texto)
+    // === MESSAGE BATCHING / DEBOUNCE ===
+    // Aguardar um curto período para permitir que mais mensagens cheguem
+    // Isso evita que a IA responda a cada mensagem individualmente
+    const BATCH_DELAY_MS = 3000; // 3 segundos de espera
+    console.log(`=== AGUARDANDO ${BATCH_DELAY_MS}ms PARA BATCHING DE MENSAGENS ===`);
+    await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
+    
+    // Verificar se chegaram mais mensagens do cliente durante o delay
+    const { data: recentMessages, error: recentMsgError } = await supabaseAdmin
+      .from("whatsapp_messages")
+      .select("id, message_content, timestamp")
+      .eq("session_id", session.id)
+      .eq("sender", "client")
+      .gte("timestamp", new Date(Date.now() - BATCH_DELAY_MS - 1000).toISOString())
+      .order("timestamp", { ascending: true });
+    
+    if (!recentMsgError && recentMessages && recentMessages.length > 1) {
+      // Se a mensagem atual não é a última, outro webhook vai processar
+      const lastMessage = recentMessages[recentMessages.length - 1];
+      if (lastMessage.id !== insertedClientMessage.id) {
+        console.log(`📨 Nova mensagem detectada durante batching. Este webhook vai encerrar.`);
+        console.log(`   Esta mensagem: ${insertedClientMessage.id}`);
+        console.log(`   Última mensagem: ${lastMessage.id}`);
+        return new Response(JSON.stringify({ 
+          success: true, 
+          clientMessageId: insertedClientMessage.id,
+          batched: true,
+          reason: "Mensagem será processada em lote com as próximas"
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        });
+      }
+    }
+
+    // Chamar a função GPT para gerar resposta (texto, áudio transcrito e imagem)
     console.log("=== CHAMANDO FUNÇÃO GPT-AGENT ===");
     const edgeFunctionUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/gpt-agent`;
     console.log("URL da função GPT:", edgeFunctionUrl);
+    
+    // Preparar payload com mídia se disponível
+    const gptAgentPayload: any = { session_id: session.id };
+    if (mediaBase64 && messageType === "image") {
+      gptAgentPayload.image_url = mediaBase64;
+      console.log("📸 Enviando imagem para GPT Vision junto com a conversa");
+    }
     
     let gptResponse;
     let retryCount = 0;
@@ -445,7 +669,7 @@ Responda APENAS com: oferta, quente, morno ou frio`;
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!}`
             },
-            body: JSON.stringify({ session_id: session.id })
+            body: JSON.stringify(gptAgentPayload)
         });
 
         console.log("=== RESPOSTA DA FUNÇÃO GPT-AGENT (TENTATIVA " + (retryCount + 1) + ") ===");
