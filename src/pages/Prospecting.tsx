@@ -14,7 +14,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { toast } from 'sonner';
 import { Loader2, AlertCircle, Wifi, WifiOff, X, RotateCcw, Brain } from 'lucide-react';
 
-type Agent = { id: string; name: string; };
+type Agent = { id: string; name: string; gpt_model?: string };
 type WhatsAppInstance = { id: string; name: string; phone_number: string | null; status: string; };
 type Session = { id: string; client_name: string; created_at: string; status: string; client_whatsapp_number: string; };
 type Message = { id: string; session_id: string; sender: 'agent' | 'client'; message_content: string; timestamp: string; delays?: any };
@@ -24,6 +24,7 @@ const prospectingSchema = z.object({
   whatsapp_instance_id: z.string().min(1, "Por favor, selecione uma instância WhatsApp."),
   client_name: z.string().min(1, "O nome do cliente é obrigatório."),
   client_whatsapp_number: z.string().min(10, "O número do WhatsApp é obrigatório e deve ser válido."),
+  client_notes: z.string().optional(),
 });
 
 const Prospecting = () => {
@@ -45,7 +46,8 @@ const Prospecting = () => {
       agent_id: "",
       whatsapp_instance_id: "",
       client_name: "", 
-      client_whatsapp_number: ""
+      client_whatsapp_number: "",
+      client_notes: ""
     },
   });
 
@@ -56,7 +58,8 @@ const Prospecting = () => {
       
       const { data, error } = await supabase
         .from('agents')
-        .select('id, name')
+        .select('id, name, gpt_model')
+        .eq('user_id', user.id)
         .eq('is_active', true);
       if (error) {
         toast.error("Erro ao carregar agentes: " + error.message);
@@ -99,6 +102,7 @@ const Prospecting = () => {
       const { data, error } = await supabase
         .from('prospecting_sessions')
         .select('*')
+        .eq('user_id', user.id)
         .order('created_at', { ascending: false });
       
       if (error) {
@@ -329,6 +333,7 @@ const Prospecting = () => {
       const { data: existingSessions } = await supabase
         .from('prospecting_sessions')
         .select('id, status')
+        .eq('user_id', user.id)
         .eq('client_whatsapp_number', values.client_whatsapp_number);
 
       const activeSessions = existingSessions?.filter(session => 
@@ -362,14 +367,28 @@ const Prospecting = () => {
         throw new Error(data.error);
       }
       
-      toast.success(`Prospecção iniciada com sucesso! ID: ${data.sessionId}`, { 
+      const selectedAgent = agents.find((agent) => agent.id === values.agent_id);
+      const usedModel = data?.gptModel as string | undefined;
+      const expectedModel = selectedAgent?.gpt_model;
+
+      let successMessage = `Prospecção iniciada com sucesso! ID: ${data.sessionId}`;
+      if (usedModel) {
+        successMessage += ` • Modelo: ${usedModel}`;
+      }
+
+      toast.success(successMessage, { 
         id: loadingToast 
       });
+
+      if (usedModel && expectedModel && usedModel !== expectedModel) {
+        toast.info(`Modelo aplicado (${usedModel}) difere do configurado para o agente (${expectedModel}). A sessão foi reutilizada e alinhada com o novo agente.`);
+      }
       
       form.reset({
         agent_id: "",
         client_name: "",
-        client_whatsapp_number: ""
+        client_whatsapp_number: "",
+        client_notes: ""
       });
       
       await fetchSessions();
@@ -381,6 +400,7 @@ const Prospecting = () => {
         const { data: updatedSessions } = await supabase
           .from('prospecting_sessions')
           .select('*')
+          .eq('user_id', user.id)
           .order('created_at', { ascending: false });
         
         if (updatedSessions) {
@@ -569,6 +589,27 @@ const Prospecting = () => {
                     </FormControl>
                     <p className="text-sm text-muted-foreground">
                       Inclua o código do país e o DDD. Ex: 5511999998888
+                    </p>
+                    <FormMessage />
+                  </FormItem>
+                )} 
+              />
+              
+              <FormField 
+                control={form.control} 
+                name="client_notes" 
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>📝 Anotações sobre o Cliente (opcional)</FormLabel>
+                    <FormControl>
+                      <Textarea 
+                        placeholder="Ex: Cliente interessado em sapatos femininos tamanho 38. Comprou tênis em novembro. Gosta de cores claras. Mora em São Paulo."
+                        className="min-h-[100px]"
+                        {...field} 
+                      />
+                    </FormControl>
+                    <p className="text-sm text-muted-foreground">
+                      Informações extras sobre o cliente que a IA usará nas respostas
                     </p>
                     <FormMessage />
                   </FormItem>

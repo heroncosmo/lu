@@ -51,6 +51,7 @@ serve(async (req) => {
         id,
         client_name,
         client_whatsapp_number,
+        client_notes,
         status,
         agents (
           instructions,
@@ -76,8 +77,11 @@ serve(async (req) => {
       throw new Error("A configuração do agente está incompleta.");
     }
 
-    // Usar o modelo configurado ou padrão GPT-4
-    const gptModel = agent.gpt_model || "gpt-4";
+    // Usar o modelo configurado; fallback apenas se ausente
+    const gptModel = agent.gpt_model ?? (() => {
+      console.warn("Agente sem gpt_model definido, usando fallback gpt-4o");
+      return "gpt-4o";
+    })();
     const responseDelay = agent.response_delay_seconds || 30;
     const wordDelay = agent.word_delay_seconds || 1.6;
     
@@ -105,8 +109,21 @@ serve(async (req) => {
     console.log("Mensagens:", JSON.stringify(messages, null, 2));
 
     // === BUSCAR ANOTAÇÕES DO CLIENTE PARA CONTEXTO DA IA ===
-    // Primeiro buscar o crm_contact para obter o crm_client_code
+    // Primeiro verificar anotações salvas diretamente na sessão (do formulário)
     let clientAnnotationsContext = "";
+    
+    if (sessionData.client_notes && sessionData.client_notes.trim()) {
+      console.log("=== ANOTAÇÕES DO FORMULÁRIO ENCONTRADAS ===");
+      console.log("Anotações:", sessionData.client_notes);
+      clientAnnotationsContext = `
+
+📝 ANOTAÇÕES DO CLIENTE (informações do vendedor):
+${sessionData.client_notes}
+
+USE ESTAS INFORMAÇÕES PARA PERSONALIZAR TODAS AS RESPOSTAS!`;
+    }
+    
+    // Depois buscar o crm_contact para obter o crm_client_code
     const { data: crmContact } = await supabaseAdmin
       .from("crm_contacts")
       .select("id, crm_client_code, notes, segment, kanban_status")
@@ -181,9 +198,45 @@ IMPORTANTE: Sua personalidade e forma de falar devem seguir EXATAMENTE as instru
 Exemplo de formato correto:
 Que bom ouvir isso, Rodrigo! Tudo tranquilo por aqui também, graças a Deus. Como estão as coisas por aí? Muita porreria ou tá de boa?`;
 
+    // === CONFIGURAÇÃO DE MODELOS OPENAI (Junho 2025) ===
+    // Baseado na documentação oficial: https://platform.openai.com/docs/guides/latest-model
+    // 
+    // GPT-5 Series (gpt-5.1, gpt-5, gpt-5-mini, gpt-5-nano, gpt-5-pro):
+    //   - Usa role "developer" (não "system")
+    //   - Usa max_completion_tokens (não max_tokens)
+    //   - TODOS requerem reasoning_effort obrigatório
+    //   - gpt-5.1: suporta "none", "low", "medium", "high" (default: none)
+    //   - gpt-5, gpt-5-mini, gpt-5-nano: suporta "low", "medium", "high" (NÃO suporta "none"!)
+    //   - gpt-5-pro: suporta "medium", "high" (default: high, mais inteligente)
+    //   - NÃO suporta temperature (exceto gpt-5.1 com reasoning=none)
+    //
+    // GPT-4.1 Series (gpt-4.1, gpt-4.1-mini, gpt-4.1-nano):
+    //   - Usa role "developer" 
+    //   - Usa max_completion_tokens
+    //   - NÃO usa reasoning_effort (não é modelo de raciocínio)
+    //   - Suporta temperature
+    //
+    // O-series (o3, o3-mini, o4-mini):
+    //   - Usa role "developer"
+    //   - Usa max_completion_tokens + reasoning_effort
+    //
+    // Modelos legados (gpt-4o, gpt-4-turbo, etc):
+    //   - Usa role "system"
+    //   - Usa max_tokens + temperature
+    
+    const isGpt5Series = gptModel.startsWith('gpt-5');
+    const isGpt51 = gptModel.startsWith('gpt-5.1');
+    const isGpt5Pro = gptModel === 'gpt-5-pro';
+    const isGpt41Series = gptModel.startsWith('gpt-4.1');
+    const isOSeries = gptModel.startsWith('o3') || gptModel.startsWith('o4');
+    const isNewModel = isGpt5Series || isGpt41Series || isOSeries;
+    
+    // Role: developer para modelos novos, system para legados
+    const systemRole = isNewModel ? "developer" : "system";
+
     // Construir o histórico da conversa para o GPT
-    const formattedMessages: OpenAIMessage[] = [
-      { role: "system", content: systemPrompt },
+    const formattedMessages: any[] = [
+      { role: systemRole, content: systemPrompt },
       ...messages.map((msg: any) => ({
         role: msg.sender === "agent" ? "assistant" : "user",
         content: msg.message_content,
@@ -201,19 +254,39 @@ Que bom ouvir isso, Rodrigo! Tudo tranquilo por aqui também, graças a Deus. Co
 
     console.log("=== CHAMANDO API DA OPENAI ===");
     
-    // GPT-5.x, GPT-4.1 e O-series usam max_completion_tokens, outros usam max_tokens
-    // Aumentado para 1000 tokens para permitir respostas completas do agente
-    const isNewModel = gptModel.startsWith('gpt-5') || gptModel.startsWith('gpt-4.1') || gptModel.startsWith('o3') || gptModel.startsWith('o4');
+    // Parâmetros de tokens
     const tokenParam = isNewModel ? { max_completion_tokens: 1000 } : { max_tokens: 1000 };
     
-    // GPT-5 e O-series não suportam temperature diferente de 1
-    const temperatureParam = isNewModel ? {} : { temperature: 0.8 };
+    // Parâmetros extras (reasoning_effort / temperature)
+    let extraParams: Record<string, any> = {};
     
-    console.log(`=== PARÂMETROS DA API OPENAI ===`);
-    console.log(`Modelo: ${gptModel}, isNewModel: ${isNewModel}`);
-    console.log(`Token param:`, tokenParam);
+    if (isGpt5Series) {
+      // Todos os modelos GPT-5 requerem reasoning_effort
+      if (isGpt5Pro) {
+        // gpt-5-pro: default é high, é o mais inteligente
+        extraParams = { reasoning_effort: "medium" };
+      } else if (isGpt51) {
+        // gpt-5.1: suporta "none" para resposta rápida
+        extraParams = { reasoning_effort: "none" };
+      } else {
+        // gpt-5, gpt-5-mini, gpt-5-nano: mínimo é "low", NÃO suporta "none"
+        extraParams = { reasoning_effort: "low" };
+      }
+    } else if (isOSeries) {
+      // O-series também precisa de reasoning_effort
+      extraParams = { reasoning_effort: "low" };
+    } else if (isGpt41Series) {
+      // GPT-4.1 não é modelo de raciocínio, suporta temperature
+      extraParams = { temperature: 0.8 };
+    } else if (!isNewModel) {
+      // Modelos legados (gpt-4o, gpt-4-turbo, etc)
+      extraParams = { temperature: 0.8 };
+    }
     
-    const openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+    console.log(`🧠 Modelo: ${gptModel} | isNewModel: ${isNewModel} | systemRole: ${systemRole} | extraParams:`, JSON.stringify(extraParams));
+    
+    // Chamada primária
+    let openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -222,15 +295,21 @@ Que bom ouvir isso, Rodrigo! Tudo tranquilo por aqui também, graças a Deus. Co
       body: JSON.stringify({
         model: gptModel,
         messages: formattedMessages,
-        ...temperatureParam,
         ...tokenParam,
+        ...extraParams,
       }),
     });
 
+    // SEM FALLBACK - vamos mostrar o erro real da API
     if (!openaiResponse.ok) {
-      const errorBody = await openaiResponse.json();
-      console.error("Erro na API da OpenAI:", errorBody);
-      throw new Error(`Erro na API da OpenAI: ${errorBody.error.message}`);
+      let errorBody: any = null;
+      try { errorBody = await openaiResponse.json(); } catch { errorBody = await openaiResponse.text(); }
+      console.error("❌ Erro na API da OpenAI:", typeof errorBody === 'string' ? errorBody : JSON.stringify(errorBody, null, 2));
+      console.error("❌ Status:", openaiResponse.status);
+      console.error("❌ Modelo usado:", gptModel);
+      console.error("❌ isNewModel:", isNewModel);
+      const errorMessage = (errorBody as any)?.error?.message || JSON.stringify(errorBody);
+      throw new Error(`Erro na API da OpenAI (${openaiResponse.status}): ${errorMessage}`);
     }
 
     const responseJson = await openaiResponse.json();

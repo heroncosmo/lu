@@ -31,8 +31,9 @@ serve(async (req) => {
 
     const body = await req.json();
     console.log("Payload recebido:", body);
-    const { agent_id, client_name, client_whatsapp_number, whatsapp_instance_id, user_id: providedUserId, campaign_id, message_type, triple_profile, contact_count, internal_system_call } = body;
+    const { agent_id, client_name, client_whatsapp_number, whatsapp_instance_id, user_id: providedUserId, campaign_id, message_type, triple_profile, contact_count, internal_system_call, client_notes } = body;
     console.log("Flag internal_system_call:", internal_system_call);
+    console.log("Anotações do cliente:", client_notes || "(nenhuma)");
     
     // Verificar se é chamada interna (do cadence-scheduler) ou externa (do frontend)
     const authHeader = req.headers.get("Authorization") || '';
@@ -110,19 +111,45 @@ serve(async (req) => {
       .maybeSingle();
 
     let sessionData;
-    
+
     if (existingSession) {
-      // Reutilizar sessão existente
+      // Reutilizar sessão existente, mas alinhar com o agente/modelo escolhido agora
       console.log(`✅ Sessão existente encontrada: ${existingSession.id}`);
       sessionData = existingSession;
-      
-      // Atualizar sessão com dados da campanha se necessário
-      if (campaign_id && !existingSession.campaign_id) {
-        await supabaseClient
+
+      const sessionUpdates: Record<string, any> = {};
+
+      if (existingSession.agent_id !== agent_id) {
+        sessionUpdates.agent_id = agent_id;
+      }
+
+      if (existingSession.whatsapp_instance_id !== whatsapp_instance_id) {
+        sessionUpdates.whatsapp_instance_id = whatsapp_instance_id;
+      }
+
+      if (campaign_id && existingSession.campaign_id !== campaign_id) {
+        sessionUpdates.campaign_id = campaign_id;
+      }
+
+      // Atualizar anotações se foram fornecidas
+      if (client_notes && client_notes.trim()) {
+        sessionUpdates.client_notes = client_notes;
+      }
+
+      if (Object.keys(sessionUpdates).length > 0) {
+        console.log("Atualizando sessão reutilizada com o novo agente/modelo selecionado...", sessionUpdates);
+        const { data: updatedSession, error: updateError } = await supabaseClient
           .from("prospecting_sessions")
-          .update({ campaign_id, status: "active" })
-          .eq("id", existingSession.id);
-        sessionData.campaign_id = campaign_id;
+          .update(sessionUpdates)
+          .eq("id", existingSession.id)
+          .select()
+          .single();
+
+        if (updateError) {
+          throw new Error(`Erro ao atualizar sessão existente: ${updateError.message}`);
+        }
+
+        sessionData = updatedSession;
       }
     } else {
       // Criar nova sessão
@@ -136,6 +163,7 @@ serve(async (req) => {
           client_whatsapp_number, 
           whatsapp_instance_id,
           campaign_id: campaign_id || null,
+          client_notes: client_notes || null,
           status: "started",
           ai_enabled: true
         })
@@ -167,14 +195,25 @@ serve(async (req) => {
       throw new Error("A configuração do agente está incompleta.");
     }
 
-    // Usar o modelo configurado ou padrão GPT-4
-    const gptModel = agent.gpt_model || "gpt-4";
+    // Usar o modelo configurado; cair em fallback apenas se não existir
+    const gptModel = agent.gpt_model ?? (() => {
+      console.warn("Agente sem gpt_model definido, usando fallback gpt-4o");
+      return "gpt-4o";
+    })();
     console.log(`=== CONFIGURAÇÃO DO AGENTE (MENSAGEM INICIAL) ===`);
     console.log(`Modelo GPT: ${gptModel}`);
     console.log(`Instruções: ${agent.instructions}`);
 
     // === BUSCAR ANOTAÇÕES DO CLIENTE (se houver) ===
     let clientAnnotations = '';
+    
+    // Primeiro, verificar se foram enviadas anotações diretamente do formulário
+    if (client_notes && client_notes.trim()) {
+      clientAnnotations = '\n\n📝 ANOTAÇÕES DO CLIENTE (use estas informações para personalizar a conversa):\n' + client_notes.trim();
+      console.log("Anotações do formulário incluídas no prompt:", client_notes);
+    }
+    
+    // Depois, buscar anotações adicionais do banco se houver campaign_id
     if (campaign_id) {
       // Buscar anotações do cliente para personalização
       const { data: annotations } = await supabaseClient
@@ -255,7 +294,75 @@ IMPORTANTE: Sua personalidade e forma de falar devem seguir EXATAMENTE as instru
 Exemplo de formato:
 Oi ${client_name}! Vi seu perfil e achei interessante seu trabalho. Gostaria de saber se você tem interesse em uma solução que pode ajudar a otimizar seus resultados. Podemos conversar 5 minutos sobre isso?`;
 
-    const openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+    // === CONFIGURAÇÃO DE MODELOS OPENAI (Junho 2025) ===
+    // Baseado na documentação oficial: https://platform.openai.com/docs/guides/latest-model
+    // 
+    // GPT-5 Series (gpt-5.1, gpt-5, gpt-5-mini, gpt-5-nano, gpt-5-pro):
+    //   - Usa role "developer" (não "system")
+    //   - Usa max_completion_tokens (não max_tokens)
+    //   - TODOS requerem reasoning_effort obrigatório
+    //   - gpt-5.1: suporta "none", "low", "medium", "high" (default: none)
+    //   - gpt-5, gpt-5-mini, gpt-5-nano: suporta "low", "medium", "high" (NÃO suporta "none"!)
+    //   - gpt-5-pro: suporta "medium", "high" (default: high, mais inteligente)
+    //   - NÃO suporta temperature (exceto gpt-5.1 com reasoning=none)
+    //
+    // GPT-4.1 Series (gpt-4.1, gpt-4.1-mini, gpt-4.1-nano):
+    //   - Usa role "developer" 
+    //   - Usa max_completion_tokens
+    //   - NÃO usa reasoning_effort (não é modelo de raciocínio)
+    //   - Suporta temperature
+    //
+    // O-series (o3, o3-mini, o4-mini):
+    //   - Usa role "developer"
+    //   - Usa max_completion_tokens + reasoning_effort
+    //
+    // Modelos legados (gpt-4o, gpt-4-turbo, etc):
+    //   - Usa role "system"
+    //   - Usa max_tokens + temperature
+    
+    const isGpt5Series = gptModel.startsWith('gpt-5');
+    const isGpt51 = gptModel.startsWith('gpt-5.1');
+    const isGpt5Pro = gptModel === 'gpt-5-pro';
+    const isGpt41Series = gptModel.startsWith('gpt-4.1');
+    const isOSeries = gptModel.startsWith('o3') || gptModel.startsWith('o4');
+    const isNewModel = isGpt5Series || isGpt41Series || isOSeries;
+    
+    // Role: developer para modelos novos, system para legados
+    const systemRole = isNewModel ? "developer" : "system";
+    
+    // Parâmetros de tokens
+    const tokenParam = isNewModel ? { max_completion_tokens: 500 } : { max_tokens: 500 };
+    
+    // Parâmetros extras (reasoning_effort / temperature)
+    let extraParams: Record<string, any> = {};
+    
+    if (isGpt5Series) {
+      // Todos os modelos GPT-5 requerem reasoning_effort
+      if (isGpt5Pro) {
+        // gpt-5-pro: default é high, é o mais inteligente
+        extraParams = { reasoning_effort: "medium" };
+      } else if (isGpt51) {
+        // gpt-5.1: suporta "none" para resposta rápida
+        extraParams = { reasoning_effort: "none" };
+      } else {
+        // gpt-5, gpt-5-mini, gpt-5-nano: mínimo é "low", NÃO suporta "none"
+        extraParams = { reasoning_effort: "low" };
+      }
+    } else if (isOSeries) {
+      // O-series também precisa de reasoning_effort
+      extraParams = { reasoning_effort: "low" };
+    } else if (isGpt41Series) {
+      // GPT-4.1 não é modelo de raciocínio, suporta temperature
+      extraParams = { temperature: 0.8 };
+    } else if (!isNewModel) {
+      // Modelos legados (gpt-4o, gpt-4-turbo, etc)
+      extraParams = { temperature: 0.8 };
+    }
+    
+    console.log(`🧠 Modelo: ${gptModel} | isNewModel: ${isNewModel} | systemRole: ${systemRole} | extraParams:`, JSON.stringify(extraParams));
+    
+    // Chamada primária
+    let openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -264,18 +371,24 @@ Oi ${client_name}! Vi seu perfil e achei interessante seu trabalho. Gostaria de 
       body: JSON.stringify({
         model: gptModel,
         messages: [
-          { role: "system", content: systemPrompt },
+          { role: systemRole, content: systemPrompt },
           { role: "user", content: `Gere uma mensagem inicial de prospecção para ${client_name} seguindo todas as regras acima.` }
         ],
-        max_tokens: 200,
-        temperature: 0.8,
+        ...tokenParam,
+        ...extraParams,
       }),
     });
 
+    // SEM FALLBACK - vamos mostrar o erro real da API
     if (!openaiResponse.ok) {
-      const errorBody = await openaiResponse.json();
-      console.error("Erro na API da OpenAI:", errorBody);
-      throw new Error(`Erro na API da OpenAI: ${errorBody.error.message}`);
+      let errorBody: any = null;
+      try { errorBody = await openaiResponse.json(); } catch { errorBody = await openaiResponse.text(); }
+      console.error("❌ Erro na API da OpenAI:", typeof errorBody === 'string' ? errorBody : JSON.stringify(errorBody, null, 2));
+      console.error("❌ Status:", openaiResponse.status);
+      console.error("❌ Modelo usado:", gptModel);
+      console.error("❌ isNewModel:", isNewModel);
+      const errorMessage = (errorBody as any)?.error?.message || JSON.stringify(errorBody);
+      throw new Error(`Erro na API da OpenAI (${openaiResponse.status}): ${errorMessage}`);
     }
 
     const responseJson = await openaiResponse.json();
@@ -307,15 +420,20 @@ Oi ${client_name}! Vi seu perfil e achei interessante seu trabalho. Gostaria de 
     console.log("=== MENSAGEM FORMATADA (ÚNICO PARÁGRAFO) ===");
     console.log(initialMessage);
 
-    // === API W-API (formato que funciona com api.w-api.app) ===
-    // URL: https://api.w-api.app/v1/message/send-text?instanceId=X&phone=Y
-    // Autenticação: Bearer token no header
-    const whatsappApiUrl = `https://api.w-api.app/v1/message/send-text?instanceId=${WHATSAPP_INSTANCE_ID}&phone=${client_whatsapp_number}`;
+    // === CORREÇÃO DA API ===
+    // 1. URL Base e Endpoint Corretos
+    const whatsappApiUrl = `https://api.w-api.app/v1/message/send-text?instanceId=${WHATSAPP_INSTANCE_ID}`;
+    
+    // 2. Payload Correto
+    const formattedNumber = client_whatsapp_number.includes('@') ? client_whatsapp_number.replace('@c.us', '') : client_whatsapp_number;
     
     const requestBody = {
+      phone: formattedNumber,
       message: initialMessage
+      // Removido: delayMessage: 2 (para evitar duplicação de tempo)
     };
 
+    // 3. Headers Corretos (Autenticação Bearer)
     const fetchOptions: RequestInit = {
       method: "POST",
       headers: { 
@@ -326,7 +444,6 @@ Oi ${client_name}! Vi seu perfil e achei interessante seu trabalho. Gostaria de 
     };
 
     console.log(`Enviando mensagem para: ${whatsappApiUrl}`);
-    console.log("Token (primeiros 10 chars):", WHATSAPP_TOKEN.substring(0, 10));
     console.log("Corpo da requisição:", requestBody);
 
     const response = await fetch(whatsappApiUrl, fetchOptions);
@@ -449,7 +566,12 @@ Oi ${client_name}! Vi seu perfil e achei interessante seu trabalho. Gostaria de 
         
   } catch (error) {
     console.error("=== ERRO NÃO TRATADO ===:", error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return new Response(JSON.stringify({ 
+      error: errorMessage,
+      errorType: error instanceof Error ? error.name : typeof error,
+      stack: error instanceof Error ? error.stack : undefined
+    }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 500,
     });

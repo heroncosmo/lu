@@ -132,35 +132,29 @@ serve(async (req) => {
       );
     }
 
-    // Criar profile diretamente (não dependemos do trigger pois admin.createUser pode não disparar)
+    // Atualizar role e permissions no perfil (o trigger já criou com team_member por padrão)
     if (newUser.user) {
-      console.log("Creating profile for user:", newUser.user.id);
+      // Aguardar um pouco para o trigger criar o perfil
+      await new Promise(resolve => setTimeout(resolve, 500));
       
-      // Criar profile diretamente com UPSERT (insert ou update se já existir)
-      const { error: upsertError } = await supabaseAdmin
+      const { error: updateError } = await supabaseAdmin
         .from("user_profiles")
-        .upsert({ 
-          id: newUser.user.id,
-          user_id: newUser.user.id,
-          email: email,
+        .update({ 
           role: role || 'team_member',
           full_name,
-          is_active: true,
           created_by: currentUser.id,
           permissions: permissions || null
-        }, { 
-          onConflict: 'user_id',
-          ignoreDuplicates: false 
-        });
-          
-      if (upsertError) {
-        console.error("Error upserting profile:", upsertError);
+        })
+        .eq("user_id", newUser.user.id);
+
+      if (updateError) {
+        console.error("Error updating profile:", updateError);
         
-        // Se upsert falhou, tentar insert simples como fallback
+        // Se falhou o update, pode ser que o trigger não criou o perfil
+        // Então tentamos criar diretamente
         const { error: insertError } = await supabaseAdmin
           .from("user_profiles")
           .insert({ 
-            id: newUser.user.id,
             user_id: newUser.user.id,
             email: email,
             role: role || 'team_member',
@@ -172,11 +166,7 @@ serve(async (req) => {
           
         if (insertError) {
           console.error("Error inserting profile:", insertError);
-        } else {
-          console.log("Profile created via fallback insert");
         }
-      } else {
-        console.log("Profile created/updated successfully");
       }
     }
 
