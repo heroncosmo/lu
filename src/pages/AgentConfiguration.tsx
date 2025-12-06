@@ -17,7 +17,7 @@ import { toast } from 'sonner';
 import { 
   Trash2, Edit, Bot, RotateCcw, Clock, Zap, 
   Send, Sparkles, History, Loader2, MessageSquare,
-  Check
+  Check, ImagePlus, X
 } from 'lucide-react';
 import BackToHomeButton from '@/components/BackToHomeButton';
 
@@ -41,6 +41,7 @@ interface ChatMessage {
   content: string;
   timestamp: Date;
   proposedPrompt?: string;
+  imageUrl?: string; // base64 data URL da imagem anexada
 }
 
 interface PromptVersion {
@@ -264,6 +265,7 @@ const AgentConfiguration = () => {
   // Chat IA states
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
+  const [chatImage, setChatImage] = useState<string | null>(null); // base64 data URL
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [promptVersions, setPromptVersions] = useState<PromptVersion[]>([]);
   const [showVersions, setShowVersions] = useState(false);
@@ -273,6 +275,7 @@ const AgentConfiguration = () => {
   const [preservationTestResults, setPreservationTestResults] = useState<string | null>(null);
   
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const form = useForm<z.infer<typeof agentSchema>>({
     resolver: zodResolver(agentSchema),
@@ -389,12 +392,42 @@ const AgentConfiguration = () => {
     }]);
   };
 
-  const sendChatMessage = async () => {
-    console.log('[sendChatMessage] Iniciando...', { chatInput: chatInput.trim(), isAiLoading, editingAgentId });
+  // Handler para seleção de imagem
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
     
-    if (!chatInput.trim() || isAiLoading || !editingAgentId) {
+    // Validar tipo de arquivo
+    if (!file.type.startsWith('image/')) {
+      toast.error('Por favor, selecione uma imagem (PNG, JPG, etc.)');
+      return;
+    }
+    
+    // Validar tamanho (max 20MB para OpenAI)
+    if (file.size > 20 * 1024 * 1024) {
+      toast.error('A imagem deve ter no máximo 20MB');
+      return;
+    }
+    
+    // Converter para base64
+    const reader = new FileReader();
+    reader.onload = () => {
+      setChatImage(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+    
+    // Limpar input para permitir selecionar a mesma imagem novamente
+    e.target.value = '';
+  };
+
+  const sendChatMessage = async () => {
+    console.log('[sendChatMessage] Iniciando...', { chatInput: chatInput.trim(), hasImage: !!chatImage, isAiLoading, editingAgentId });
+    
+    // Permitir envio se tiver texto OU imagem
+    if ((!chatInput.trim() && !chatImage) || isAiLoading || !editingAgentId) {
       console.log('[sendChatMessage] Retornando cedo:', { 
-        noChatInput: !chatInput.trim(), 
+        noChatInput: !chatInput.trim(),
+        noImage: !chatImage,
         isLoading: isAiLoading, 
         noAgentId: !editingAgentId 
       });
@@ -404,12 +437,17 @@ const AgentConfiguration = () => {
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
       role: 'user',
-      content: chatInput.trim(),
-      timestamp: new Date()
+      content: chatInput.trim() || '(imagem enviada)',
+      timestamp: new Date(),
+      imageUrl: chatImage || undefined
     };
+
+    // Guardar referência da imagem antes de limpar
+    const currentImage = chatImage;
 
     setChatMessages(prev => [...prev, userMessage]);
     setChatInput('');
+    setChatImage(null);
     setIsAiLoading(true);
 
     try {
@@ -427,8 +465,9 @@ const AgentConfiguration = () => {
       }
 
       // Preparar histórico de conversa (limitar para economizar tokens)
+      // Para mensagens com imagem, não incluir no histórico (muito pesado)
       const conversationHistory = chatMessages
-        .filter(m => m.role !== 'system')
+        .filter(m => m.role !== 'system' && !m.imageUrl)
         .slice(-4)
         .map(m => ({
           role: m.role as 'user' | 'assistant',
@@ -448,19 +487,49 @@ IMPORTANTE:
 - Explique o que você fez ou vai fazer
 - Faça APENAS as mudanças solicitadas no documento
 - PRESERVE 100% do resto do documento (formatação, espaçamento, tudo)
-- Se for apenas uma pergunta (sem pedido de edição), responda normalmente e mantenha o documento igual`;
+- Se for apenas uma pergunta (sem pedido de edição), responda normalmente e mantenha o documento igual
+- Se o usuário enviar uma IMAGEM, analise-a cuidadosamente e use as informações dela para calibrar/ajustar o documento conforme solicitado`;
 
-      const userPrompt = `DOCUMENTO ATUAL DO PLAYBOOK:
+      // Construir mensagem do usuário - com ou sem imagem
+      let userMessageContent: any;
+      
+      if (currentImage) {
+        // Mensagem com imagem - usar formato vision
+        userMessageContent = [
+          {
+            type: 'text',
+            text: `DOCUMENTO ATUAL DO PLAYBOOK:
+\`\`\`
+${currentInstructions}
+\`\`\`
+
+MENSAGEM DO USUÁRIO:
+${userMessage.content || 'Analise a imagem e use as informações para calibrar o playbook.'}`
+          },
+          {
+            type: 'image_url',
+            image_url: {
+              url: currentImage,
+              detail: 'high' // alta qualidade para ler textos na imagem
+            }
+          }
+        ];
+        console.log('[chat] 🖼️ Mensagem inclui imagem (vision mode)');
+      } else {
+        // Mensagem só texto
+        userMessageContent = `DOCUMENTO ATUAL DO PLAYBOOK:
 \`\`\`
 ${currentInstructions}
 \`\`\`
 
 MENSAGEM DO USUÁRIO:
 ${userMessage.content}`;
+      }
 
       console.log('[chat] 🚀 Iniciando chamada à API OpenAI (JSON Schema)...');
       console.log('[chat] 📊 Modelo:', agentModel);
       console.log('[chat] 📏 Tamanho do prompt atual:', currentInstructions.length, 'caracteres');
+      console.log('[chat] 🖼️ Com imagem:', !!currentImage);
       
       // Timeout de 120 segundos (prompts grandes + GPT-5 pode demorar)
       const controller = new AbortController();
@@ -481,7 +550,7 @@ ${userMessage.content}`;
           messages: [
             { role: 'system', content: systemPrompt },
             ...conversationHistory,
-            { role: 'user', content: userPrompt }
+            { role: 'user', content: userMessageContent }
           ],
           temperature: 0.3,  // Baixa para fidelidade, mas não zero para naturalidade
           // CRÍTICO: response_format com JSON Schema garante resposta válida
@@ -1343,6 +1412,17 @@ ${successCount === totalTests ? '✅ Todas as edições preservaram o documento!
                               : 'bg-accent'
                           }`}
                         >
+                          {/* Exibir imagem anexada se houver */}
+                          {message.imageUrl && (
+                            <div className="mb-2">
+                              <img 
+                                src={message.imageUrl} 
+                                alt="Imagem enviada" 
+                                className="max-h-48 w-auto rounded-lg"
+                              />
+                            </div>
+                          )}
+                          
                           <div className="text-sm whitespace-pre-wrap">
                             {message.content.split('```').map((part, i) => {
                               if (i % 2 === 1) {
@@ -1421,11 +1501,53 @@ ${successCount === totalTests ? '✅ Todas as edições preservaram o documento!
                 
                 {/* Input do Chat */}
                 <div className="p-4 border-t shrink-0 bg-background">
+                  {/* Preview da imagem anexada */}
+                  {chatImage && (
+                    <div className="mb-3 relative inline-block">
+                      <img 
+                        src={chatImage} 
+                        alt="Imagem anexada" 
+                        className="h-20 w-auto rounded-lg border shadow-sm"
+                      />
+                      <Button
+                        variant="destructive"
+                        size="icon"
+                        className="absolute -top-2 -right-2 h-6 w-6 rounded-full"
+                        onClick={() => setChatImage(null)}
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        🖼️ Imagem pronta para enviar
+                      </p>
+                    </div>
+                  )}
+                  
                   <div className="flex gap-2">
+                    {/* Input de arquivo oculto */}
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleImageSelect}
+                      accept="image/*"
+                      className="hidden"
+                    />
+                    
+                    {/* Botão de anexar imagem */}
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isAiLoading || !form.getValues('gpt_api_key')}
+                      title="Anexar imagem para calibrar o prompt"
+                    >
+                      <ImagePlus className="h-4 w-4" />
+                    </Button>
+                    
                     <Input
                       value={chatInput}
                       onChange={(e) => setChatInput(e.target.value)}
-                      placeholder="O que você quer melhorar no prompt?"
+                      placeholder={chatImage ? "Descreva o que quer calibrar com base na imagem..." : "O que você quer melhorar no prompt?"}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' && !e.shiftKey) {
                           e.preventDefault();
@@ -1436,7 +1558,7 @@ ${successCount === totalTests ? '✅ Todas as edições preservaram o documento!
                     />
                     <Button 
                       onClick={sendChatMessage} 
-                      disabled={isAiLoading || !chatInput.trim() || !form.getValues('gpt_api_key')}
+                      disabled={isAiLoading || (!chatInput.trim() && !chatImage) || !form.getValues('gpt_api_key')}
                       size="icon"
                     >
                       {isAiLoading ? (
