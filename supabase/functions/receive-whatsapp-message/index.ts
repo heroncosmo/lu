@@ -716,40 +716,80 @@ Responda APENAS com: oferta, quente, morno ou frio`;
       });
     }
 
-    // === MESSAGE BATCHING / DEBOUNCE ===
-    // Aguardar um curto período para permitir que mais mensagens cheguem
-    // Isso evita que a IA responda a cada mensagem individualmente
-    const BATCH_DELAY_MS = 3000; // 3 segundos de espera
-    console.log(`=== AGUARDANDO ${BATCH_DELAY_MS}ms PARA BATCHING DE MENSAGENS ===`);
-    await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
+    // === MESSAGE BATCHING / DEBOUNCE INTELIGENTE ===
+    // Sistema de batching que aguarda o cliente terminar de digitar
+    // Clientes frequentemente enviam várias mensagens em sequência
+    const INITIAL_BATCH_DELAY_MS = 5000; // 5 segundos iniciais
+    const CHECK_INTERVAL_MS = 2000; // Verificar a cada 2 segundos
+    const MAX_WAIT_MS = 30000; // Máximo 30 segundos esperando novas mensagens
     
-    // Verificar se chegaram mais mensagens do cliente durante o delay
-    const { data: recentMessages, error: recentMsgError } = await supabaseAdmin
-      .from("whatsapp_messages")
-      .select("id, message_content, timestamp")
-      .eq("session_id", session.id)
-      .eq("sender", "client")
-      .gte("timestamp", new Date(Date.now() - BATCH_DELAY_MS - 1000).toISOString())
-      .order("timestamp", { ascending: true });
+    console.log(`=== INICIANDO BATCHING INTELIGENTE ===`);
+    console.log(`Delay inicial: ${INITIAL_BATCH_DELAY_MS}ms, verificação a cada ${CHECK_INTERVAL_MS}ms, máx: ${MAX_WAIT_MS}ms`);
     
-    if (!recentMsgError && recentMessages && recentMessages.length > 1) {
-      // Se a mensagem atual não é a última, outro webhook vai processar
-      const lastMessage = recentMessages[recentMessages.length - 1];
-      if (lastMessage.id !== insertedClientMessage.id) {
-        console.log(`📨 Nova mensagem detectada durante batching. Este webhook vai encerrar.`);
-        console.log(`   Esta mensagem: ${insertedClientMessage.id}`);
-        console.log(`   Última mensagem: ${lastMessage.id}`);
+    // Aguardar delay inicial
+    await new Promise(resolve => setTimeout(resolve, INITIAL_BATCH_DELAY_MS));
+    
+    // Salvar o timestamp da mensagem atual para comparação
+    const currentMessageTimestamp = insertedClientMessage.timestamp || new Date().toISOString();
+    let lastCheckTimestamp = currentMessageTimestamp;
+    let totalWaitTime = INITIAL_BATCH_DELAY_MS;
+    
+    // Loop de verificação: enquanto chegarem novas mensagens, continuar esperando
+    while (totalWaitTime < MAX_WAIT_MS) {
+      // Verificar se chegaram mais mensagens do cliente APÓS esta mensagem
+      const { data: newerMessages, error: newerMsgError } = await supabaseAdmin
+        .from("whatsapp_messages")
+        .select("id, message_content, timestamp")
+        .eq("session_id", session.id)
+        .eq("sender", "client")
+        .gt("timestamp", currentMessageTimestamp)
+        .order("timestamp", { ascending: false })
+        .limit(1);
+      
+      if (!newerMsgError && newerMessages && newerMessages.length > 0) {
+        // Há mensagens mais novas - este webhook deve encerrar
+        // A mensagem mais recente vai processar todo o lote
+        console.log(`📨 Mensagem mais nova detectada. Este webhook vai encerrar.`);
+        console.log(`   Esta mensagem: ${insertedClientMessage.id} (${currentMessageTimestamp})`);
+        console.log(`   Mensagem mais nova: ${newerMessages[0].id} (${newerMessages[0].timestamp})`);
         return new Response(JSON.stringify({ 
           success: true, 
           clientMessageId: insertedClientMessage.id,
           batched: true,
-          reason: "Mensagem será processada em lote com as próximas"
+          reason: "Mensagem mais nova detectada - este webhook encerrou para evitar duplicação"
         }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
           status: 200,
         });
       }
+      
+      // Verificar se há mensagens recentes (últimos 3 segundos) indicando que cliente ainda está digitando
+      const { data: veryRecentMessages } = await supabaseAdmin
+        .from("whatsapp_messages")
+        .select("id, timestamp")
+        .eq("session_id", session.id)
+        .eq("sender", "client")
+        .gte("timestamp", new Date(Date.now() - 3000).toISOString())
+        .order("timestamp", { ascending: false });
+      
+      // Se a mensagem mais recente é esta (não há novas nos últimos 3s), podemos prosseguir
+      if (!veryRecentMessages || veryRecentMessages.length === 0 || 
+          (veryRecentMessages.length === 1 && veryRecentMessages[0].id === insertedClientMessage.id)) {
+        console.log(`✅ Cliente parou de digitar. Prosseguindo com geração de resposta.`);
+        break;
+      }
+      
+      // Ainda há atividade recente, esperar mais um pouco
+      console.log(`⏳ Atividade recente detectada, aguardando mais ${CHECK_INTERVAL_MS}ms...`);
+      await new Promise(resolve => setTimeout(resolve, CHECK_INTERVAL_MS));
+      totalWaitTime += CHECK_INTERVAL_MS;
     }
+    
+    if (totalWaitTime >= MAX_WAIT_MS) {
+      console.log(`⚠️ Tempo máximo de espera atingido (${MAX_WAIT_MS}ms). Prosseguindo mesmo assim.`);
+    }
+    
+    console.log(`=== BATCHING CONCLUÍDO - TOTAL: ${totalWaitTime}ms ===`);
 
     // Chamar a função GPT para gerar resposta (texto, áudio transcrito e imagem)
     console.log("=== CHAMANDO FUNÇÃO GPT-AGENT ===");
@@ -814,9 +854,38 @@ Responda APENAS com: oferta, quente, morno ou frio`;
     console.log("=== DADOS DA FUNÇÃO GPT ===");
     console.log("Dados completos:", JSON.stringify(gptData, null, 2));
     
+    // Verificar se a resposta foi cancelada por nova mensagem do cliente
+    if (gptData.cancelled) {
+      console.log(`⚠️ Resposta cancelada: ${gptData.reason}`);
+      console.log(`   Outra instância do webhook vai processar as mensagens mais recentes.`);
+      return new Response(JSON.stringify({ 
+        success: true, 
+        clientMessageId: insertedClientMessage.id,
+        cancelled: true,
+        reason: gptData.reason
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 200,
+      });
+    }
+    
     const { reply: agentReply, delays } = gptData;
     console.log("Resposta do GPT:", agentReply);
     console.log("Informações de delay:", delays);
+    
+    // Se não há resposta válida, encerrar
+    if (!agentReply) {
+      console.log("⚠️ Nenhuma resposta do GPT-Agent");
+      return new Response(JSON.stringify({ 
+        success: true, 
+        clientMessageId: insertedClientMessage.id,
+        noReply: true,
+        reason: "GPT-Agent não retornou resposta"
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 200,
+      });
+    }
 
     // BUSCAR INSTÂNCIA WHATSAPP CORRETA PARA MULTI-INSTANCE
     console.log("=== BUSCANDO INSTÂNCIA WHATSAPP ===");

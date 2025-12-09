@@ -195,6 +195,14 @@ REGRAS IMPORTANTES PARA RESPOSTAS:
 9. Se o cliente enviar uma imagem, analise-a e responda de forma relevante ao conteúdo da imagem
 10. NUNCA diga "não consigo ouvir áudios" ou "me manda por escrito" - você JÁ recebe os áudios transcritos!
 
+CONTINUIDADE DA CONVERSA (CRÍTICO):
+- Você está no MEIO de uma conversa, NÃO no início. O histórico acima mostra tudo que já foi dito.
+- NUNCA reinicie a prospecção ou cumprimente como se fosse a primeira mensagem.
+- Se o cliente diz "blz", "ok", "beleza", "tá bom", "pode ser", continue a conversa naturalmente, não recomece.
+- Respostas curtas do cliente (1-2 palavras) são confirmações, não pedidos para recomeçar.
+- Mantenha o fluxo da conversa - leia o histórico para entender onde vocês pararam.
+- Se já houve troca de mensagens, você já se apresentou. NÃO se apresente novamente.
+
 FORMATO DAS RESPOSTAS:
 - Escreva TUDO EM UM ÚNICO PARÁGRAFO
 - NÃO USE QUEBRAS DE LINHA
@@ -286,10 +294,51 @@ Que bom ouvir isso, Rodrigo! Tudo tranquilo por aqui também, graças a Deus. Co
       ? formattedMessages[formattedMessages.length - 1]?.content 
       : "[Mensagem com imagem]");
 
-    // Simular tempo de leitura antes de gerar resposta
-    console.log(`=== SIMULANDO TEMPO DE LEITURA ===`);
-    console.log(`Aguardando ${responseDelay}s (tempo de leitura)...`);
-    await delay(responseDelay * 1000);
+    // Guardar o número de mensagens e timestamp da última para verificar se chegaram novas
+    const initialMessageCount = messages?.length || 0;
+    const lastMessageTimestamp = messages && messages.length > 0 
+      ? messages[messages.length - 1].timestamp 
+      : new Date().toISOString();
+
+    // === SIMULAÇÃO DE TEMPO DE LEITURA COM VERIFICAÇÃO DE NOVAS MENSAGENS ===
+    // Dividir o delay em intervalos menores para verificar se chegaram novas mensagens
+    console.log(`=== SIMULANDO TEMPO DE LEITURA (${responseDelay}s) ===`);
+    const CHECK_INTERVAL_S = 5; // Verificar a cada 5 segundos
+    let elapsedSeconds = 0;
+    
+    while (elapsedSeconds < responseDelay) {
+      const waitTime = Math.min(CHECK_INTERVAL_S, responseDelay - elapsedSeconds);
+      await delay(waitTime * 1000);
+      elapsedSeconds += waitTime;
+      
+      // Verificar se chegaram novas mensagens do cliente durante a espera
+      const { data: currentMessages } = await supabaseAdmin
+        .from("whatsapp_messages")
+        .select("id, sender, timestamp")
+        .eq("session_id", session_id)
+        .eq("sender", "client")
+        .gt("timestamp", lastMessageTimestamp)
+        .limit(1);
+      
+      if (currentMessages && currentMessages.length > 0) {
+        console.log(`⚠️ Nova mensagem do cliente detectada durante delay de leitura!`);
+        console.log(`   Cancelando esta geração de resposta para evitar resposta desatualizada.`);
+        console.log(`   O webhook da nova mensagem irá processar o lote completo.`);
+        
+        return new Response(JSON.stringify({ 
+          success: false, 
+          cancelled: true,
+          reason: "Nova mensagem do cliente recebida durante processamento",
+          reply: null,
+          delays: null
+        }), {
+          headers: corsHeaders,
+          status: 200, // 200 para não gerar erro, apenas cancelar
+        });
+      }
+      
+      console.log(`   ⏳ ${elapsedSeconds}s / ${responseDelay}s...`);
+    }
 
     console.log("=== CHAMANDO API DA OPENAI ===");
     
