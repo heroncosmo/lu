@@ -589,12 +589,12 @@ ${userMessage.content}`;
       console.log('[chat] 📏 Tamanho do prompt atual:', currentInstructions.length, 'caracteres');
       console.log('[chat] 🖼️ Com imagem:', !!currentImage);
       
-      // Timeout de 120 segundos (prompts grandes + GPT-5 pode demorar)
+      // Timeout de 180 segundos (3 minutos - prompts grandes + GPT-5/4.1 podem demorar)
       const controller = new AbortController();
       const timeoutId = setTimeout(() => {
-        console.error('[chat] ⏰ Timeout de 120 segundos atingido!');
+        console.error('[chat] ⏰ Timeout de 180 segundos atingido!');
         controller.abort();
-      }, 120000);
+      }, 180000);
       
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -720,7 +720,7 @@ ${userMessage.content}`;
       // Detectar se foi timeout/abort
       const isTimeout = error.name === 'AbortError';
       const errorText = isTimeout 
-        ? 'A requisição demorou demais (60s). Tente novamente ou use um pedido mais simples.'
+        ? 'A requisição demorou demais (180s). Tente novamente ou use um pedido mais simples.'
         : error.message;
       
       const errorMessage: ChatMessage = {
