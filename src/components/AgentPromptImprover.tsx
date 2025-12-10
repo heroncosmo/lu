@@ -250,49 +250,89 @@ Responda em português brasileiro.`;
           content: m.content
         }));
 
-      // Chamar GPT via API
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${agent.gpt_api_key}`
-        },
-        body: JSON.stringify({
-          model: agent.gpt_model || 'gpt-4',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            ...conversationMessages,
-            { role: 'user', content: userMessage }
-          ],
-          temperature: 0.7,
-          max_tokens: 2000
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error('Erro ao chamar GPT');
+      // === CONFIGURAÇÃO DE MODELOS OPENAI (Junho 2025) ===
+      const gptModel = agent.gpt_model || 'gpt-4o';
+      const isGpt5Series = gptModel.startsWith('gpt-5');
+      const isGpt41Series = gptModel.startsWith('gpt-4.1');
+      const isOSeries = gptModel.startsWith('o3') || gptModel.startsWith('o4');
+      const isNewModel = isGpt5Series || isGpt41Series || isOSeries;
+      
+      // Role: developer para modelos novos, system para legados
+      const systemRole = isNewModel ? "developer" : "system";
+      
+      // Parâmetros de tokens
+      const tokenParam = isNewModel ? { max_completion_tokens: 2000 } : { max_tokens: 2000 };
+      
+      // Parâmetros extras
+      let extraParams: Record<string, any> = {};
+      if (isGpt5Series) {
+        const isGpt51 = gptModel.startsWith('gpt-5.1');
+        extraParams = { reasoning_effort: isGpt51 ? "none" : "low" };
+      } else if (isOSeries) {
+        extraParams = { reasoning_effort: "low" };
+      } else if (isGpt41Series || !isNewModel) {
+        extraParams = { temperature: 0.7 };
       }
 
-      const data = await response.json();
-      const assistantMessage = data.choices[0].message.content;
+      // Timeout de 180 segundos (3 minutos)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 180000);
 
-      // Salvar resposta do assistente
-      await supabase
-        .from('agent_improvement_messages')
-        .insert({
-          session_id: currentSession.id,
-          role: 'assistant',
-          content: assistantMessage
+      try {
+        // Chamar GPT via API
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${agent.gpt_api_key}`
+          },
+          signal: controller.signal,
+          body: JSON.stringify({
+            model: gptModel,
+            messages: [
+              { role: systemRole, content: systemPrompt },
+              ...conversationMessages,
+              { role: 'user', content: userMessage }
+            ],
+            ...tokenParam,
+            ...extraParams
+          })
         });
 
-      // Verificar se há um novo prompt proposto
-      const promptMatch = assistantMessage.match(/\[NOVO_PROMPT_INICIO\]([\s\S]*?)\[NOVO_PROMPT_FIM\]/);
-      if (promptMatch) {
-        setProposedPrompt(promptMatch[1].trim());
-      }
+        clearTimeout(timeoutId);
 
-      // Atualizar mensagens
-      fetchMessages(currentSession.id);
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error?.message || 'Erro ao chamar GPT');
+        }
+
+        const data = await response.json();
+        const assistantMessage = data.choices[0].message.content;
+
+        // Salvar resposta do assistente
+        await supabase
+          .from('agent_improvement_messages')
+          .insert({
+            session_id: currentSession.id,
+            role: 'assistant',
+            content: assistantMessage
+          });
+
+        // Verificar se há um novo prompt proposto
+        const promptMatch = assistantMessage.match(/\[NOVO_PROMPT_INICIO\]([\s\S]*?)\[NOVO_PROMPT_FIM\]/);
+        if (promptMatch) {
+          setProposedPrompt(promptMatch[1].trim());
+        }
+
+        // Atualizar mensagens
+        fetchMessages(currentSession.id);
+      } catch (fetchError: any) {
+        clearTimeout(timeoutId);
+        if (fetchError.name === 'AbortError') {
+          throw new Error('Timeout: A requisição demorou mais de 3 minutos');
+        }
+        throw fetchError;
+      }
     } catch (err: any) {
       console.error('Erro:', err);
       toast.error('Erro ao processar mensagem: ' + err.message);
