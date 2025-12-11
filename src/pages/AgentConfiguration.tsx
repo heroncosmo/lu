@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { compareTwoStrings, findBestMatch } from 'string-similarity';
 
 import { toast } from 'sonner';
 import { 
@@ -286,6 +287,136 @@ const testGPTModel = async (apiKey: string, model: string): Promise<{ success: b
   } catch (error: any) {
     return { success: false, message: `❌ Erro: ${error.message}` };
   }
+};
+
+/**
+ * Normaliza unicode usando NFKD para remover diferenças de:
+ * - Hyphens diferentes (U+2011 vs U+002D)
+ * - Quotes curly vs straight
+ * - Ligaduras (ﬀ vs ff)
+ */
+const normalizeUnicode = (text: string): string => {
+  // NFKD decompõe caracteres combinados
+  let normalized = text.normalize('NFKD');
+  // Remove marcas diacríticas (acentos)
+  normalized = normalized.replace(/[\u0300-\u036f]/g, '');
+  // Normaliza espaços em branco (tabs, múltiplos espaços)
+  normalized = normalized.replace(/\s+/g, ' ');
+  // Normaliza hyphens (todos os tipos para hyphen-minus regular)
+  normalized = normalized.replace(/[\u2010-\u2015\u2012\u2013\u2014\u2011\u2010]/g, '-');
+  // Normaliza quotes curly para straight
+  normalized = normalized.replace(/[\u201c\u201d\u201e\u201f]/g, '"');
+  // Normaliza apostrophes curly para straight
+  normalized = normalized.replace(/[\u2018\u2019\u201b]/g, "'");
+  return normalized.toLowerCase().trim();
+};
+
+/**
+ * Encontra o melhor match fuzzy em um texto
+ * Retorna: { index: número da posição, matchText: texto encontrado, similarity: score 0-1 }
+ */
+const findFuzzyMatch = (
+  searchText: string,
+  document: string,
+  threshold: number = 0.85
+): { index: number; matchText: string; similarity: number } | null => {
+  if (!searchText || searchText.length < 3) return null;
+  
+  const normalized = normalizeUnicode;
+  const searchNorm = normalized(searchText);
+  const docNorm = normalized(document);
+  
+  // Estratégia 1: Procurar por linhas (melhor para documentos com múltiplas linhas)
+  const lines = document.split('\n');
+  let bestMatch: { index: number; matchText: string; similarity: number } | null = null;
+  let charIndex = 0;
+  
+  for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+    const line = lines[lineIdx];
+    const lineNorm = normalized(line);
+    
+    // Verificar se encontra exatamente na linha normalizada
+    if (lineNorm.includes(searchNorm)) {
+      const idx = lineNorm.indexOf(searchNorm);
+      return {
+        index: charIndex + idx,
+        matchText: line.substring(idx, idx + searchText.length),
+        similarity: 1.0
+      };
+    }
+    
+    const similarity = compareTwoStrings(searchNorm, lineNorm);
+    if (similarity > threshold) {
+      return {
+        index: charIndex,
+        matchText: line,
+        similarity: similarity
+      };
+    }
+    
+    // Se não encontrou na linha inteira, procurar em chunks da linha
+    if (line.length > searchText.length) {
+      const chunkSize = searchText.length + 20;
+      for (let i = 0; i <= line.length - searchText.length; i += Math.max(1, Math.floor(searchText.length / 2))) {
+        const chunk = line.substring(i, Math.min(i + chunkSize, line.length));
+        const chunkNorm = normalized(chunk);
+        const chunkSimilarity = compareTwoStrings(searchNorm, chunkNorm);
+        
+        if (chunkSimilarity > (bestMatch?.similarity || threshold)) {
+          bestMatch = {
+            index: charIndex + i,
+            matchText: chunk,
+            similarity: chunkSimilarity
+          };
+        }
+      }
+    }
+    
+    charIndex += line.length + 1; // +1 para o '\n'
+  }
+  
+  return bestMatch;
+};
+
+/**
+ * Aplica edição com fuzzy matching
+ * Tenta encontrar o texto mesmo com diferenças de codificação unicode
+ */
+const applyFuzzyEdit = (
+  document: string,
+  searchText: string,
+  replaceText: string,
+  threshold: number = 0.85
+): { success: boolean; result: string; matchedText?: string } => {
+  // Primeiro tenta exact match (mais rápido)
+  if (document.includes(searchText)) {
+    return {
+      success: true,
+      result: document.replace(searchText, replaceText),
+      matchedText: searchText
+    };
+  }
+  
+  // Se falhar, tenta fuzzy match
+  const match = findFuzzyMatch(searchText, document, threshold);
+  
+  if (!match) {
+    return {
+      success: false,
+      result: document,
+      matchedText: undefined
+    };
+  }
+  
+  // Encontrou um match fuzzy - remover o trecho encontrado e inserir o novo
+  const before = document.substring(0, match.index);
+  const after = document.substring(match.index + match.matchText.length);
+  
+  return {
+    success: true,
+    result: before + replaceText + after,
+    matchedText: match.matchText
+  };
 };
 
 const AgentConfiguration = () => {
@@ -803,18 +934,25 @@ ${userMessage.content}`;
           let totalChanges = 0;
           let failedChanges = 0;
           
-          console.log(`[chat] ✂️ Aplicando ${result.edicoes.length} edições...`);
+          console.log(`[chat] ✂️ Aplicando ${result.edicoes.length} edições com fuzzy matching...`);
           
           for (const edicao of result.edicoes) {
             const { buscar, substituir } = edicao;
             
-            if (updatedDoc.includes(buscar)) {
-              updatedDoc = updatedDoc.replace(buscar, substituir);
+            // Usar fuzzy matching com threshold 85%
+            const fuzzyResult = applyFuzzyEdit(updatedDoc, buscar, substituir, 0.85);
+            
+            if (fuzzyResult.success) {
+              updatedDoc = fuzzyResult.result;
               totalChanges++;
-              console.log(`[chat] ✅ Edição ${totalChanges}: "${buscar.substring(0, 50)}..." → "${substituir.substring(0, 50)}..."`);
+              const matchType = fuzzyResult.matchedText === buscar ? '✅ EXACT' : '✨ FUZZY';
+              console.log(`[chat] ${matchType} Edição ${totalChanges}: "${buscar.substring(0, 50)}..." → "${substituir.substring(0, 50)}..."`);
+              if (fuzzyResult.matchedText !== buscar) {
+                console.log(`[chat]    Encontrado via fuzzy: "${fuzzyResult.matchedText?.substring(0, 50)}..."`);
+              }
             } else {
               failedChanges++;
-              console.log(`[chat] ⚠️ Texto não encontrado: "${buscar.substring(0, 50)}..."`);
+              console.log(`[chat] ⚠️ Texto não encontrado (fuzzy match falhou): "${buscar.substring(0, 50)}..."`);
             }
           }
           
@@ -828,7 +966,7 @@ ${userMessage.content}`;
             assistantContent += `\n\n✅ **${totalChanges} alteração(ões) pronta(s)!** (${sizeDiff > 0 ? '+' : ''}${sizeDiff} caracteres)\n_Clique em "Aplicar Alterações" para confirmar._`;
             
             if (failedChanges > 0) {
-              warningMessage = `\n\n⚠️ **NOTA**: ${failedChanges} edição(ões) não foi(ram) encontrada(s) exatamente no texto.`;
+              warningMessage = `\n\n⚠️ **NOTA**: ${failedChanges} edição(ões) não foi(ram) encontrada(s) no texto.`;
             }
           } else {
             assistantContent += `\n\n⚠️ Nenhuma edição pôde ser aplicada (textos não encontrados).`;
