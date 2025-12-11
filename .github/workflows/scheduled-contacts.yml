@@ -1,0 +1,40 @@
+name: Execute Scheduled Contacts Worker
+
+on:
+  schedule:
+    # Executar a cada 2 minutos
+    - cron: '*/2 * * * *'
+  
+  # Permitir execução manual para testes
+  workflow_dispatch:
+
+jobs:
+  execute-scheduled-contacts:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Call Scheduled Contact Worker
+        run: |
+          response=$(curl -s -w "\n%{http_code}" -X POST \
+            "${{ secrets.SUPABASE_URL }}/functions/v1/scheduled-contact-worker" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Content-Type: application/json")
+          
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          
+          echo "HTTP Status: $http_code"
+          echo "Response Body: $body"
+          
+          if [ "$http_code" -ne 200 ]; then
+            echo "❌ Worker execution failed with status $http_code"
+            exit 1
+          fi
+          
+          echo "✅ Worker executed successfully"
+          
+      - name: Notify on Failure
+        if: failure()
+        run: |
+          echo "⚠️ Scheduled contacts worker failed!"
+          echo "Check the logs above for details"
