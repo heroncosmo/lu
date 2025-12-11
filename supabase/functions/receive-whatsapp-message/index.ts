@@ -1052,7 +1052,7 @@ Responda APENAS com: oferta, quente, morno ou frio`;
     if (gptData.cancelled) {
       console.log(`⚠️ Resposta cancelada: ${gptData.reason}`);
       console.log(`   Outra instância do webhook vai processar as mensagens mais recentes.`);
-      await releaseLock(); // Liberar lock antes de encerrar
+      if (releaseLock) await releaseLock(); // Liberar lock antes de encerrar
       return new Response(JSON.stringify({ 
         success: true, 
         clientMessageId: insertedClientMessage.id,
@@ -1071,7 +1071,7 @@ Responda APENAS com: oferta, quente, morno ou frio`;
     // Se não há resposta válida, encerrar
     if (!agentReply) {
       console.log("⚠️ Nenhuma resposta do GPT-Agent");
-      await releaseLock(); // Liberar lock antes de encerrar
+      if (releaseLock) await releaseLock(); // Liberar lock antes de encerrar
       return new Response(JSON.stringify({ 
         success: true, 
         clientMessageId: insertedClientMessage.id,
