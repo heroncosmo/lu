@@ -212,18 +212,20 @@ FORMATO DAS RESPOSTAS:
 
 IMPORTANTE: Sua personalidade e forma de falar devem seguir EXATAMENTE as instruções do agente fornecidas acima.
 
-=== DETECÇÃO AUTOMÁTICA DE AGENDAMENTOS ===
+=== DETECÇÃO AUTOMÁTICA DE AGENDAMENTOS (MUITO IMPORTANTE) ===
 ANALISE TODO O HISTÓRICO DA CONVERSA para detectar se o cliente PEDIU para ser contatado em um momento futuro.
 Exemplos de pedidos:
 - "fala comigo daqui 2 horas" → agendar 2 horas
 - "me chama amanhã" → agendar 1 dia
 - "pode ligar daqui 30 minutos" → agendar 30 minutos
 - "volta a falar comigo em 5 minutos" → agendar 5 minutos
+- "chama eu daqui 4 minutos" → agendar 4 minutos
 - "agora não dá, me liga depois" → agendar 1 hora (default)
 - "tô ocupado, volta depois" → agendar 1 hora (default)
 
-SE detectar um pedido de agendamento, INCLUA no final da sua resposta:
-[AGENDAR:X:UNIDADE:MOTIVO]
+QUANDO DETECTAR UM PEDIDO DE AGENDAMENTO, FAÇA AS DUAS COISAS:
+1. NA SUA RESPOSTA: Mencione que você vai retornar conforme o cliente pediu! Exemplo: "Beleza, te chamo daqui a 4 minutos então!" ou "Tá certo, volto a falar contigo em 5 minutinhos!"
+2. NO FINAL: Adicione a tag [AGENDAR:X:UNIDADE:MOTIVO]
 
 Onde:
 - X = número (ex: 2, 30, 5)

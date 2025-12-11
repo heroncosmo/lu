@@ -36,7 +36,7 @@ serve(async (req) => {
       throw fetchError;
     }
 
-    console.log(`📋 Encontrados ${dueContacts?.length || 0} agendamentos pendentes`);
+    console.log(`[INFO] Encontrados ${dueContacts?.length || 0} agendamentos pendentes`);
 
     if (!dueContacts || dueContacts.length === 0) {
       return new Response(
@@ -51,7 +51,7 @@ serve(async (req) => {
     const results = [];
 
     for (const contact of dueContacts) {
-      console.log(`\n📞 Processando agendamento: ${contact.id}`);
+      console.log(`\n[PROCESS] Processando agendamento: ${contact.id}`);
       console.log(`Cliente: ${contact.client_name} (${contact.client_whatsapp_number})`);
       console.log(`Agendado para: ${contact.scheduled_for}`);
       console.log(`Motivo: ${contact.reason}`);
@@ -143,7 +143,7 @@ Exemplo: "E aí ${contact.client_name}, tudo certo? Como combinamos, tô voltand
           .replace(/\s+/g, ' ')
           .trim();
 
-        console.log(`📨 Mensagem de retomada: "${resumeMessage}"`);
+        console.log(`[MSG] Mensagem de retomada: "${resumeMessage}"`);
 
         // Inserir mensagem do agente no histórico
         const { error: insertError } = await supabaseAdmin
@@ -159,18 +159,45 @@ Exemplo: "E aí ${contact.client_name}, tudo certo? Como combinamos, tô voltand
           throw new Error(`Erro ao inserir mensagem: ${insertError.message}`);
         }
 
-        // Enviar mensagem via WhatsApp
-        const { error: sendError } = await supabaseAdmin.functions.invoke('send-whatsapp-message', {
-          body: {
-            instance_id: sessionData.whatsapp_instance_id,
-            phone: contact.client_whatsapp_number,
+        // Enviar mensagem via WhatsApp usando a API direta (W-API)
+        // Buscar a instância WhatsApp para obter as credenciais
+        const { data: instanceData, error: instanceError } = await supabaseAdmin
+          .from('whatsapp_instances')
+          .select('instance_id, token, name')
+          .eq('id', sessionData.whatsapp_instance_id)
+          .eq('is_active', true)
+          .single();
+
+        if (instanceError || !instanceData) {
+          throw new Error(`Instância WhatsApp não encontrada ou inativa: ${instanceError?.message}`);
+        }
+
+        console.log(`[WHATSAPP] Usando instância: ${instanceData.name}`);
+
+        // Formatar número (remover caracteres não numéricos)
+        const formattedNumber = contact.client_whatsapp_number.replace(/\D/g, '');
+
+        // Chamar a API do WhatsApp W-API
+        const wapiUrl = `https://api.w-api.app/v1/message/send-text?instanceId=${instanceData.instance_id}`;
+        const wapiResponse = await fetch(wapiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${instanceData.token}`,
+          },
+          body: JSON.stringify({
+            phone: formattedNumber,
             message: resumeMessage,
-          }
+          }),
         });
 
-        if (sendError) {
-          throw new Error(`Erro ao enviar WhatsApp: ${sendError.message}`);
+        if (!wapiResponse.ok) {
+          const wapiError = await wapiResponse.text();
+          throw new Error(`Erro ao enviar WhatsApp via W-API: ${wapiResponse.status} - ${wapiError}`);
         }
+
+        const wapiResult = await wapiResponse.json();
+        console.log(`[OK] Mensagem enviada via W-API para ${formattedNumber}:`, wapiResult);
 
         // Marcar agendamento como executado
         await supabaseAdmin.rpc('mark_scheduled_contact_executed', {
@@ -178,7 +205,7 @@ Exemplo: "E aí ${contact.client_name}, tudo certo? Como combinamos, tô voltand
           error_msg: null
         });
 
-        console.log(`✅ Agendamento ${contact.id} executado com sucesso`);
+        console.log(`[OK] Agendamento ${contact.id} executado com sucesso`);
         
         results.push({
           contact_id: contact.id,
@@ -188,7 +215,7 @@ Exemplo: "E aí ${contact.client_name}, tudo certo? Como combinamos, tô voltand
         });
 
       } catch (error: any) {
-        console.error(`❌ Erro ao processar agendamento ${contact.id}:`, error);
+        console.error(`[ERROR] Erro ao processar agendamento ${contact.id}:`, error);
         
         // Marcar agendamento como falho
         await supabaseAdmin.rpc('mark_scheduled_contact_executed', {
