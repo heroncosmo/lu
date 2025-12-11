@@ -1,18 +1,17 @@
 /**
- * Script de teste local para validar a lógica de batching V3
+ * Script de teste local para validar a lógica de batching V4
  * 
  * Este script simula o comportamento do batching sem precisar de deploy
  * 
  * Uso:
- *   npx ts-node scripts/test-batching-logic.ts
+ *   npx tsx scripts/test-batching-logic.ts
  */
 
-// Constantes do batching V3 (mesmo valores do edge function)
+// Constantes do batching V4 (mesmo valores do edge function)
 const INITIAL_WAIT_MS = 3000; // Espera inicial de 3s
-const MIN_CHECK_INTERVAL_MS = 3000; // Mínimo entre verificações: 3s
-const MAX_CHECK_INTERVAL_MS = 8000; // Máximo entre verificações: 8s
-const STABILITY_THRESHOLD = 2; // Quantas verificações sem mudança = estabilizado
-const ABSOLUTE_MAX_WAIT_MS = 300000; // Máximo absoluto: 5 minutos (segurança)
+const STABILITY_WAIT_MS = 4000; // Considerar estável após 4s sem novas mensagens
+const MAX_TOTAL_WAIT_MS = 60000; // Máximo 60s total
+const CHECK_INTERVAL_MS = 2000; // Verificar a cada 2s
 
 // Simular banco de dados com mensagens
 interface Message {
@@ -45,11 +44,6 @@ class MockDatabase {
     return [...this.messages];
   }
 
-  getMessagesAfter(timestampStr: string): Message[] {
-    const timestamp = new Date(timestampStr);
-    return this.messages.filter(m => m.timestamp > timestamp);
-  }
-
   getMessageCount(): number {
     return this.messages.length;
   }
@@ -71,85 +65,83 @@ async function simulateClientTyping(
   console.log(`📱 [CLIENTE] Todas as mensagens enviadas!\n`);
 }
 
-// Simular lógica de batching do edge function
-async function simulateBatching(db: MockDatabase, initialMessageId: string): Promise<{
-  totalMessages: number;
+// Simular lógica de batching V4 do edge function
+async function simulateBatchingV4(db: MockDatabase, myMessage: Message): Promise<{
+  shouldProcess: boolean;
   totalWaitTime: number;
-  totalChecks: number;
-  finalMessages: Message[];
+  reason: string;
 }> {
-  console.log(`\n🔄 [BATCHING] Iniciando estabilização...`);
-  console.log(`   Mensagem inicial: ${initialMessageId}`);
-  
-  const startTime = Date.now();
+  console.log(`\n🔄 [WEBHOOK ${myMessage.id}] Iniciando batching V4...`);
   
   // PASSO 1: Espera inicial
-  console.log(`⏳ [BATCHING] Aguardando janela inicial de ${INITIAL_WAIT_MS}ms...`);
+  console.log(`⏳ [WEBHOOK ${myMessage.id}] Aguardando ${INITIAL_WAIT_MS}ms inicial...`);
   await new Promise(resolve => setTimeout(resolve, INITIAL_WAIT_MS));
   
-  // PASSO 2: Loop de estabilização
-  let lastSeenMessageId = initialMessageId;
-  let consecutiveStableChecks = 0;
-  let totalChecks = 0;
-  let currentCheckInterval = MIN_CHECK_INTERVAL_MS;
-  
-  while (true) {
-    const elapsedMs = Date.now() - startTime;
-    if (elapsedMs >= ABSOLUTE_MAX_WAIT_MS) {
-      console.log(`⏰ [BATCHING] Tempo máximo absoluto atingido (${ABSOLUTE_MAX_WAIT_MS/1000}s). Processando agora.`);
-      break;
-    }
-    
-    const newestMsg = db.getLatestMessage();
-    if (!newestMsg) {
-      console.log(`⚠️ [BATCHING] Nenhuma mensagem encontrada. Continuando...`);
-      break;
-    }
-    
-    totalChecks++;
-    
-    if (newestMsg.id === lastSeenMessageId) {
-      consecutiveStableChecks++;
-      console.log(`📭 [BATCHING] Check ${totalChecks}: Sem novas mensagens. Estável: ${consecutiveStableChecks}/${STABILITY_THRESHOLD}`);
-      
-      if (consecutiveStableChecks >= STABILITY_THRESHOLD) {
-        const totalWait = Date.now() - startTime;
-        console.log(`✅ [BATCHING] ESTABILIZADO após ${totalChecks} verificações (${Math.round(totalWait/1000)}s total).`);
-        break;
-      }
-      
-      currentCheckInterval = Math.max(MIN_CHECK_INTERVAL_MS, currentCheckInterval - 1000);
-    } else {
-      console.log(`📨 [BATCHING] Check ${totalChecks}: NOVA MENSAGEM! ID: ${newestMsg.id}`);
-      console.log(`   Conteúdo: "${newestMsg.content.substring(0, 50)}..."`);
-      
-      lastSeenMessageId = newestMsg.id;
-      consecutiveStableChecks = 0;
-      
-      currentCheckInterval = Math.min(MAX_CHECK_INTERVAL_MS, currentCheckInterval + 1500);
-      console.log(`   Próximo check em: ${currentCheckInterval}ms (adaptativo)`);
-    }
-    
-    await new Promise(resolve => setTimeout(resolve, currentCheckInterval));
+  // PASSO 2: Verificar se sou a mensagem mais recente
+  const latestAfterWait = db.getLatestMessage();
+  if (latestAfterWait && latestAfterWait.id !== myMessage.id) {
+    console.log(`📭 [WEBHOOK ${myMessage.id}] Não sou a mais recente. Encerrando.`);
+    return {
+      shouldProcess: false,
+      totalWaitTime: INITIAL_WAIT_MS,
+      reason: `Mensagem ${latestAfterWait.id} é mais nova`
+    };
   }
   
-  const totalWaitTime = Date.now() - startTime;
-  const allMessages = db.getAllMessages();
+  console.log(`✅ [WEBHOOK ${myMessage.id}] Sou a mais recente! Aguardando estabilização...`);
   
-  console.log(`\n=== RESULTADO DO BATCHING ===`);
-  console.log(`   Total de mensagens capturadas: ${allMessages.length}`);
-  console.log(`   Tempo total de espera: ${Math.round(totalWaitTime/1000)}s`);
-  console.log(`   Total de verificações: ${totalChecks}`);
-  console.log(`   Mensagens:`);
-  allMessages.forEach((m, i) => {
-    console.log(`     ${i+1}. "${m.content}"`);
-  });
+  // PASSO 3: Loop de estabilização
+  const startTime = Date.now();
+  let lastSeenMsgId = myMessage.id;
+  let lastNewMsgTime = Date.now();
   
+  while (Date.now() - startTime < MAX_TOTAL_WAIT_MS) {
+    const checkMsg = db.getLatestMessage();
+    
+    if (checkMsg && checkMsg.id !== lastSeenMsgId) {
+      // Nova mensagem chegou
+      console.log(`📨 [WEBHOOK ${myMessage.id}] Nova mensagem: ${checkMsg.id}`);
+      
+      if (checkMsg.id !== myMessage.id) {
+        // Não sou mais a mais recente - encerrar
+        console.log(`🚪 [WEBHOOK ${myMessage.id}] Encerrando - ${checkMsg.id} vai processar`);
+        return {
+          shouldProcess: false,
+          totalWaitTime: INITIAL_WAIT_MS + (Date.now() - startTime),
+          reason: `Mensagem ${checkMsg.id} chegou e vai processar`
+        };
+      }
+      
+      lastSeenMsgId = checkMsg.id;
+      lastNewMsgTime = Date.now();
+    }
+    
+    // Verificar se estabilizou
+    if (Date.now() - lastNewMsgTime >= STABILITY_WAIT_MS) {
+      console.log(`✅ [WEBHOOK ${myMessage.id}] Estabilizado após ${Math.round((Date.now() - lastNewMsgTime) / 1000)}s`);
+      break;
+    }
+    
+    console.log(`⏳ [WEBHOOK ${myMessage.id}] Aguardando... (${Math.round((Date.now() - startTime) / 1000)}s)`);
+    await new Promise(resolve => setTimeout(resolve, CHECK_INTERVAL_MS));
+  }
+  
+  // PASSO 4: Verificação final
+  const finalCheck = db.getLatestMessage();
+  if (finalCheck && finalCheck.id !== myMessage.id) {
+    console.log(`🚫 [WEBHOOK ${myMessage.id}] Verificação final falhou`);
+    return {
+      shouldProcess: false,
+      totalWaitTime: INITIAL_WAIT_MS + (Date.now() - startTime),
+      reason: "Outra mensagem chegou durante estabilização"
+    };
+  }
+  
+  console.log(`🎯 [WEBHOOK ${myMessage.id}] Sou o vencedor! Processando...`);
   return {
-    totalMessages: allMessages.length,
-    totalWaitTime,
-    totalChecks,
-    finalMessages: allMessages
+    shouldProcess: true,
+    totalWaitTime: INITIAL_WAIT_MS + (Date.now() - startTime),
+    reason: "Webhook vencedor - processando todas as mensagens"
   };
 }
 
@@ -166,31 +158,53 @@ async function runTest(name: string, clientMessages: string[], delayBetweenMessa
   
   const db = new MockDatabase();
   
-  // Primeira mensagem chega e dispara o batching
+  // Primeira mensagem chega e dispara o webhook
   const firstMessage = db.addMessage(clientMessages[0]);
   
-  // Iniciar cliente enviando as demais mensagens em paralelo
-  const clientPromise = simulateClientTyping(
-    db, 
-    clientMessages.slice(1), 
-    delayBetweenMessages
+  // Array para armazenar resultados de todos os webhooks
+  const webhookResults: Promise<{ msgId: string; result: Awaited<ReturnType<typeof simulateBatchingV4>> }>[] = [];
+  
+  // Primeiro webhook inicia
+  webhookResults.push(
+    simulateBatchingV4(db, firstMessage).then(result => ({ msgId: firstMessage.id, result }))
   );
   
-  // Iniciar batching (simula o edge function)
-  const batchingPromise = simulateBatching(db, firstMessage.id);
+  // Simular cliente enviando mais mensagens e webhooks correspondentes
+  for (let i = 1; i < clientMessages.length; i++) {
+    await new Promise(resolve => setTimeout(resolve, delayBetweenMessages));
+    const newMsg = db.addMessage(clientMessages[i]);
+    // Cada mensagem dispara seu próprio webhook
+    webhookResults.push(
+      simulateBatchingV4(db, newMsg).then(result => ({ msgId: newMsg.id, result }))
+    );
+  }
   
-  // Aguardar ambos terminarem
-  await Promise.all([clientPromise, batchingPromise]);
-  const result = await batchingPromise;
+  // Aguardar todos os webhooks terminarem
+  const allResults = await Promise.all(webhookResults);
   
-  // Validar resultado
-  const success = result.totalMessages === clientMessages.length;
+  // Analisar resultados
+  const winners = allResults.filter(r => r.result.shouldProcess);
+  const losers = allResults.filter(r => !r.result.shouldProcess);
+  
+  console.log(`\n=== RESULTADO DO BATCHING V4 ===`);
+  console.log(`   Total de webhooks: ${allResults.length}`);
+  console.log(`   Vencedores: ${winners.length}`);
+  console.log(`   Encerraram: ${losers.length}`);
+  console.log(`   Mensagens no DB: ${db.getMessageCount()}`);
+  
+  if (winners.length > 0) {
+    console.log(`   Webhook vencedor: ${winners[0].msgId}`);
+    console.log(`   Tempo de espera: ${Math.round(winners[0].result.totalWaitTime / 1000)}s`);
+  }
+  
+  // Critério de sucesso: exatamente 1 webhook processou
+  const success = winners.length === 1;
   
   console.log(`\n${'='.repeat(60)}`);
   if (success) {
-    console.log(`✅ TESTE PASSOU: Todas as ${clientMessages.length} mensagens foram capturadas!`);
+    console.log(`✅ TESTE PASSOU: Exatamente 1 webhook processou!`);
   } else {
-    console.log(`❌ TESTE FALHOU: Capturadas ${result.totalMessages}/${clientMessages.length} mensagens`);
+    console.log(`❌ TESTE FALHOU: ${winners.length} webhooks processaram (esperado: 1)`);
   }
   console.log(`${'='.repeat(60)}\n`);
   
@@ -200,7 +214,7 @@ async function runTest(name: string, clientMessages: string[], delayBetweenMessa
 async function main() {
   console.log(`
 ╔════════════════════════════════════════════════════════════════════╗
-║        TESTE LOCAL DA LÓGICA DE BATCHING V3                        ║
+║        TESTE LOCAL DA LÓGICA DE BATCHING V4                        ║
 ║                                                                    ║
 ║  Este script simula o comportamento do batching sem precisar       ║
 ║  de deploy. Use para validar a lógica antes de enviar para prod.   ║
