@@ -246,12 +246,13 @@ serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
+  // Variáveis declaradas FORA do try para estar disponíveis no catch
+  let webhookId: string | undefined;
+  let session: { id: string } | null | undefined;
+  let supabaseAdmin: any;
+
   try {
-    // Variáveis para controle do batching V5 (declaradas no topo para estar disponíveis no catch)
-    let webhookId: string | undefined;
-    let session: { id: string } | null | undefined;
-    
-    const supabaseAdmin = createClient(
+    supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
