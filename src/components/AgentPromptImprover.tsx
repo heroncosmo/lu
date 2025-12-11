@@ -253,16 +253,16 @@ Responda em português brasileiro.`;
         content: m.content
       }));
 
-      // === ASSISTENTE DE PROMPTS: SEMPRE USAR GPT-5.1 ===
-      // Independente do modelo configurado no agente, o assistente de prompts
-      // sempre usa gpt-5.1 para melhor qualidade e consistência
-      const ASSISTANT_MODEL = 'gpt-5.1';
+      // === ASSISTENTE DE PROMPTS: USAR GPT-4.1-MINI (RÁPIDO) ===
+      // GPT-4.1-mini é 4-8x mais rápido que GPT-5.1 (non-reasoning model)
+      // Mantém excelente qualidade para análise e melhoria de prompts
+      const ASSISTANT_MODEL = 'gpt-4.1-mini';
       
-      console.log('[AssistentePrompts] 🎯 Usando modelo FIXO:', ASSISTANT_MODEL);
+      console.log('[AssistentePrompts] 🎯 Usando modelo RÁPIDO:', ASSISTANT_MODEL);
       console.log('[AssistentePrompts] 📝 Modelo do agente (ignorado):', agent.gpt_model);
       
-      // GPT-5.1: usa role "developer" e max_completion_tokens
-      // Com reasoning_effort: "none" para resposta rápida + temperature para criatividade
+      // GPT-4.1-mini: usa role "system" (padrão) e max_tokens
+      // Non-reasoning = resposta instantânea + alta qualidade
 
       // Timeout dinâmico baseado no tamanho do prompt (mínimo 30s, máximo 120s)
       const promptSize = agent.instructions?.length || 0;
@@ -284,7 +284,7 @@ Responda em português brasileiro.`;
         
         console.log('[AssistentePrompts] 📐 Prompt atual:', promptSize, 'chars → max_tokens:', maxTokens);
         
-        // Chamar GPT-5.1 via API (modelo fixo para o Assistente de Prompts)
+        // Chamar GPT-4.1-mini via API (4-8x mais rápido que GPT-5.1)
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
           headers: {
@@ -295,12 +295,11 @@ Responda em português brasileiro.`;
           body: JSON.stringify({
             model: ASSISTANT_MODEL,
             messages: [
-              { role: 'developer', content: systemPrompt },
+              { role: 'system', content: systemPrompt },
               ...conversationMessages,
               { role: 'user', content: userMessage }
             ],
-            max_completion_tokens: maxTokens,
-            reasoning_effort: 'none',
+            max_tokens: maxTokens,
             temperature: 0.7
           })
         });
