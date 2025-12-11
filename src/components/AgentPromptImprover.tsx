@@ -258,6 +258,9 @@ Responda em português brasileiro.`;
       // sempre usa gpt-5.1 para melhor qualidade e consistência
       const ASSISTANT_MODEL = 'gpt-5.1';
       
+      console.log('[AssistentePrompts] 🎯 Usando modelo FIXO:', ASSISTANT_MODEL);
+      console.log('[AssistentePrompts] 📝 Modelo do agente (ignorado):', agent.gpt_model);
+      
       // GPT-5.1: usa role "developer" e max_completion_tokens
       // Com reasoning_effort: "none" para resposta rápida + temperature para criatividade
 
@@ -266,6 +269,8 @@ Responda em português brasileiro.`;
       const timeoutId = setTimeout(() => controller.abort(), 30000);
 
       try {
+        console.log('[AssistentePrompts] 🚀 Chamando API OpenAI...');
+        
         // Chamar GPT-5.1 via API (modelo fixo para o Assistente de Prompts)
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
