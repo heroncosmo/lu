@@ -194,15 +194,42 @@ const extractPromptSections = (prompt: string): PromptSection[] => {
 const testGPTModel = async (apiKey: string, model: string): Promise<{ success: boolean; message: string; responseTime?: number }> => {
   const startTime = Date.now();
   try {
+    // === CONFIGURAÇÃO DE MODELOS OPENAI (Dezembro 2025) ===
     const isGpt5Series = model.startsWith('gpt-5');
     const isGpt51 = model.startsWith('gpt-5.1');
+    const isGpt5Pro = model === 'gpt-5-pro';
+    const isGpt41Series = model.startsWith('gpt-4.1');
     const isOSeries = model.startsWith('o3') || model.startsWith('o4');
-    const isNewModel = isGpt5Series || isOSeries;
+    const isNewModel = isGpt5Series || isGpt41Series || isOSeries;
+    
+    // Token parameter: max_completion_tokens para modelos novos, max_tokens para legados
     const tokenParam = isNewModel ? { max_completion_tokens: 200 } : { max_tokens: 50 };
-    const supportsReasoningEffort = isOSeries || isGpt51;
-    const extraParams = supportsReasoningEffort ? { reasoning_effort: "low" } : {};
-    const role = isNewModel ? 'developer' : 'user';
-    const temperatureParam = isNewModel ? {} : { temperature: 0 };
+    
+    // Role: developer para modelos novos, system para legados
+    const systemRole = isNewModel ? 'developer' : 'system';
+    
+    // Parâmetros extras
+    let extraParams: Record<string, any> = {};
+    
+    if (isGpt5Series) {
+      if (isGpt5Pro) {
+        extraParams = { reasoning_effort: "medium" };
+      } else if (isGpt51) {
+        extraParams = { reasoning_effort: "none", temperature: 0 };
+      } else {
+        // gpt-5, gpt-5-mini, gpt-5-nano requerem reasoning_effort (mínimo low)
+        extraParams = { reasoning_effort: "low" };
+      }
+    } else if (isOSeries) {
+      extraParams = { reasoning_effort: "low" };
+    } else if (isGpt41Series) {
+      extraParams = { temperature: 0 };
+    } else {
+      // Modelos legados
+      extraParams = { temperature: 0 };
+    }
+    
+    console.log(`[testGPTModel] Testing ${model} | systemRole: ${systemRole} | extraParams:`, extraParams);
     
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -212,9 +239,11 @@ const testGPTModel = async (apiKey: string, model: string): Promise<{ success: b
       },
       body: JSON.stringify({
         model: model,
-        messages: [{ role, content: 'Responda apenas: OK' }],
+        messages: [
+          { role: systemRole, content: 'You are a helpful assistant. Respond briefly.' },
+          { role: 'user', content: 'Respond with only: OK' }
+        ],
         ...tokenParam,
-        ...temperatureParam,
         ...extraParams
       })
     });
@@ -589,12 +618,78 @@ ${userMessage.content}`;
       console.log('[chat] 📏 Tamanho do prompt atual:', currentInstructions.length, 'caracteres');
       console.log('[chat] 🖼️ Com imagem:', !!currentImage);
       
-      // Timeout de 180 segundos (3 minutos - prompts grandes + GPT-5/4.1 podem demorar)
+      // === CONFIGURAÇÃO DE MODELOS OPENAI (Dezembro 2025) ===
+      // GPT-5.x e GPT-4.1: usam role "developer" (não "system")
+      // GPT-5 (exceto 5.1 com reasoning=none): não suportam temperature
+      // Modelos legados (gpt-4o, gpt-4-turbo): usam role "system" + temperature
+      const isGpt5Series = agentModel.startsWith('gpt-5');
+      const isGpt51 = agentModel.startsWith('gpt-5.1');
+      const isGpt5Pro = agentModel === 'gpt-5-pro';
+      const isGpt41Series = agentModel.startsWith('gpt-4.1');
+      const isOSeries = agentModel.startsWith('o3') || agentModel.startsWith('o4');
+      const isNewModel = isGpt5Series || isGpt41Series || isOSeries;
+      
+      // Role: developer para modelos novos, system para legados
+      const systemRole = isNewModel ? "developer" : "system";
+      
+      // CÁLCULO DINÂMICO DE TOKENS BASEADO NO TAMANHO DO PROMPT
+      // O schema pede o documento completo de volta, então precisamos de tokens suficientes
+      // Aproximação: 1 token ≈ 4 caracteres em português
+      const promptChars = currentInstructions.length;
+      const estimatedTokensNeeded = Math.ceil(promptChars / 3.5); // Margem de segurança
+      const maxTokens = Math.min(Math.max(estimatedTokensNeeded + 2000, 4000), 32000); // Min 4k, max 32k
+      
+      console.log(`[chat] 📐 Prompt: ${promptChars} chars → estimativa: ${estimatedTokensNeeded} tokens → max: ${maxTokens}`);
+      
+      // Token parameter: max_completion_tokens para novos, max_tokens para legados
+      const tokenParam = isNewModel ? { max_completion_tokens: maxTokens } : { max_tokens: maxTokens };
+      
+      // Parâmetros extras (reasoning_effort / temperature)
+      let extraParams: Record<string, any> = {};
+      
+      if (isGpt5Series) {
+        // GPT-5 series requer reasoning_effort
+        if (isGpt5Pro) {
+          extraParams = { reasoning_effort: "medium" };
+        } else if (isGpt51) {
+          // gpt-5.1 com reasoning=none pode usar temperature
+          extraParams = { reasoning_effort: "none", temperature: 0.3 };
+        } else {
+          // gpt-5, gpt-5-mini, gpt-5-nano: mínimo é "low"
+          extraParams = { reasoning_effort: "low" };
+        }
+      } else if (isOSeries) {
+        extraParams = { reasoning_effort: "low" };
+      } else if (isGpt41Series) {
+        // GPT-4.1 suporta temperature
+        extraParams = { temperature: 0.3 };
+      } else {
+        // Modelos legados (gpt-4o, gpt-4-turbo, etc)
+        extraParams = { temperature: 0.3 };
+      }
+      
+      console.log(`[chat] 🧠 Modelo: ${agentModel} | isNewModel: ${isNewModel} | systemRole: ${systemRole}`);
+      console.log(`[chat] 📦 extraParams:`, extraParams);
+      
+      // TIMEOUT DINÂMICO baseado no tamanho do prompt
+      // Prompts grandes precisam de mais tempo (GPT-4.1 com prompt grande pode demorar 2-3 min)
+      const baseTimeout = 60000; // 60 segundos base
+      const extraTimePerKChar = 8000; // +8 segundos por 1000 caracteres
+      const calculatedTimeout = Math.min(baseTimeout + (promptChars / 1000) * extraTimePerKChar, 300000); // Máx 5 minutos
+      
+      console.log(`[chat] ⏱️ Timeout calculado: ${Math.round(calculatedTimeout/1000)}s para prompt de ${promptChars} chars`);
+      
       const controller = new AbortController();
       const timeoutId = setTimeout(() => {
-        console.error('[chat] ⏰ Timeout de 180 segundos atingido!');
+        console.error(`[chat] ⏰ Timeout de ${Math.round(calculatedTimeout/1000)} segundos atingido!`);
         controller.abort();
-      }, 180000);
+      }, calculatedTimeout);
+      
+      // Ajustar mensagens do histórico para usar o role correto
+      const adjustedConversationHistory = conversationHistory.map(m => ({
+        role: m.role === 'assistant' ? 'assistant' : 'user',
+        content: m.content
+      }));
       
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -606,11 +701,12 @@ ${userMessage.content}`;
         body: JSON.stringify({
           model: agentModel,
           messages: [
-            { role: 'system', content: systemPrompt },
-            ...conversationHistory,
+            { role: systemRole, content: systemPrompt },
+            ...adjustedConversationHistory,
             { role: 'user', content: userMessageContent }
           ],
-          temperature: 0.3,  // Baixa para fidelidade, mas não zero para naturalidade
+          ...tokenParam,
+          ...extraParams,
           // CRÍTICO: response_format com JSON Schema garante resposta válida
           response_format: {
             type: 'json_schema',
@@ -664,7 +760,28 @@ ${userMessage.content}`;
       let warningMessage = '';
       
       try {
-        const result = JSON.parse(responseContent);
+        // Sanitizar a resposta para corrigir escapes Unicode mal formados
+        const sanitizedContent = responseContent
+          .replace(/\\u(?![0-9a-fA-F]{4})/g, '\\\\u') // Corrigir escapes Unicode incompletos
+          .replace(/[\u0000-\u001F\u007F-\u009F]/g, '') // Remover caracteres de controle
+          .replace(/\\/g, (match: string, offset: number, str: string) => {
+            // Verificar se é um escape válido de JSON
+            const nextChar = str[offset + 1];
+            if (nextChar && 'bfnrtu"\\'.includes(nextChar)) {
+              return match; // Manter escapes válidos
+            }
+            if (nextChar === 'u') {
+              // Verificar se é um escape Unicode válido (\uXXXX)
+              const hex = str.slice(offset + 2, offset + 6);
+              if (/^[0-9a-fA-F]{4}$/.test(hex)) {
+                return match; // Manter escapes Unicode válidos
+              }
+            }
+            return '\\\\'; // Escapar barras invertidas isoladas
+          });
+        
+        console.log('[chat] 🔧 Conteúdo sanitizado, tentando parse...');
+        const result = JSON.parse(sanitizedContent);
         console.log('[chat] ✅ JSON parseado com sucesso');
         console.log('[chat] 💬 Resposta chat:', result.resposta_chat?.substring(0, 100) + '...');
         console.log('[chat] 🔄 Alteração feita:', result.alteracao_feita);
@@ -701,7 +818,52 @@ ${userMessage.content}`;
         
       } catch (parseError) {
         console.error('[chat] ❌ Erro ao parsear JSON:', parseError);
-        assistantContent = 'Desculpe, ocorreu um erro ao processar a resposta. Tente novamente.';
+        console.log('[chat] 🔍 Tentando extração manual de conteúdo...');
+        
+        // Fallback: tentar extrair a resposta manualmente
+        try {
+          // Tentar encontrar o campo resposta_chat com regex
+          const respostaChatMatch = responseContent.match(/"resposta_chat"\s*:\s*"((?:[^"\\]|\\.)*)"/s);
+          if (respostaChatMatch && respostaChatMatch[1]) {
+            // Decodificar escapes básicos
+            const extractedResponse = respostaChatMatch[1]
+              .replace(/\\n/g, '\n')
+              .replace(/\\"/g, '"')
+              .replace(/\\\\/g, '\\');
+            
+            console.log('[chat] ✅ Resposta extraída manualmente:', extractedResponse.substring(0, 100) + '...');
+            assistantContent = extractedResponse;
+            
+            // Verificar se houve alteração
+            const alteracaoMatch = responseContent.match(/"alteracao_feita"\s*:\s*(true|false)/);
+            if (alteracaoMatch && alteracaoMatch[1] === 'true') {
+              // Tentar extrair documento atualizado
+              const docMatch = responseContent.match(/"documento_atualizado"\s*:\s*"((?:[^"\\]|\\.)*)"/s);
+              if (docMatch && docMatch[1]) {
+                const updatedDoc = docMatch[1]
+                  .replace(/\\n/g, '\n')
+                  .replace(/\\"/g, '"')
+                  .replace(/\\\\/g, '\\');
+                
+                if (updatedDoc.length > 100) {
+                  proposedPrompt = updatedDoc;
+                  const sizeDiff = updatedDoc.length - currentInstructions.length;
+                  const diffText = sizeDiff > 0 
+                    ? `(+${sizeDiff} caracteres)` 
+                    : sizeDiff < 0 
+                      ? `(${sizeDiff} caracteres)` 
+                      : '(mesmo tamanho)';
+                  assistantContent += `\n\n✅ **Alteração pronta!** ${diffText}\n_Clique em "Aplicar Alterações" para confirmar._`;
+                }
+              }
+            }
+          } else {
+            assistantContent = 'Desculpe, ocorreu um erro ao processar a resposta. Tente novamente.';
+          }
+        } catch (fallbackError) {
+          console.error('[chat] ❌ Fallback também falhou:', fallbackError);
+          assistantContent = 'Desculpe, ocorreu um erro ao processar a resposta. Tente novamente.';
+        }
       }
 
       const assistantMessage: ChatMessage = {
@@ -720,7 +882,7 @@ ${userMessage.content}`;
       // Detectar se foi timeout/abort
       const isTimeout = error.name === 'AbortError';
       const errorText = isTimeout 
-        ? 'A requisição demorou demais (180s). Tente novamente ou use um pedido mais simples.'
+        ? 'A requisição demorou demais. Seu prompt é grande - isso pode levar até 3 minutos. Tente novamente.'
         : error.message;
       
       const errorMessage: ChatMessage = {

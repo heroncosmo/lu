@@ -716,80 +716,97 @@ Responda APENAS com: oferta, quente, morno ou frio`;
       });
     }
 
-    // === MESSAGE BATCHING / DEBOUNCE INTELIGENTE ===
-    // Sistema de batching que aguarda o cliente terminar de digitar
-    // Clientes frequentemente enviam várias mensagens em sequência
-    const INITIAL_BATCH_DELAY_MS = 5000; // 5 segundos iniciais
-    const CHECK_INTERVAL_MS = 2000; // Verificar a cada 2 segundos
-    const MAX_WAIT_MS = 30000; // Máximo 30 segundos esperando novas mensagens
+    // === MESSAGE BATCHING ROBUSTO ===
+    // Problema: Cliente envia várias mensagens em sequência rápida
+    // Solução: Usar um sistema de "última mensagem ganha" com verificação pós-delay
+    //
+    // LÓGICA:
+    // 1. Esta mensagem espera um delay fixo
+    // 2. Após o delay, verifica se é a mensagem mais recente do cliente
+    // 3. Se NÃO for a mais recente, encerra (outra vai processar)
+    // 4. Se for a mais recente, coleta TODAS as mensagens recentes e processa juntas
     
-    console.log(`=== INICIANDO BATCHING INTELIGENTE ===`);
-    console.log(`Delay inicial: ${INITIAL_BATCH_DELAY_MS}ms, verificação a cada ${CHECK_INTERVAL_MS}ms, máx: ${MAX_WAIT_MS}ms`);
+    const BATCH_WINDOW_MS = 5000; // Janela de 5 segundos para coletar mensagens
+    const VERIFICATION_DELAY_MS = 2000; // Delay adicional para confirmar
     
-    // Aguardar delay inicial
-    await new Promise(resolve => setTimeout(resolve, INITIAL_BATCH_DELAY_MS));
+    console.log(`=== BATCHING: INICIANDO ESPERA DE ${BATCH_WINDOW_MS + VERIFICATION_DELAY_MS}ms ===`);
+    console.log(`Esta mensagem ID: ${insertedClientMessage.id}`);
+    const thisMessageTimestamp = insertedClientMessage.timestamp || new Date().toISOString();
+    console.log(`Timestamp: ${thisMessageTimestamp}`);
     
-    // Salvar o timestamp da mensagem atual para comparação
-    const currentMessageTimestamp = insertedClientMessage.timestamp || new Date().toISOString();
-    let lastCheckTimestamp = currentMessageTimestamp;
-    let totalWaitTime = INITIAL_BATCH_DELAY_MS;
+    // PASSO 1: Esperar a janela de batch para permitir mais mensagens chegarem
+    await new Promise(resolve => setTimeout(resolve, BATCH_WINDOW_MS));
     
-    // Loop de verificação: enquanto chegarem novas mensagens, continuar esperando
-    while (totalWaitTime < MAX_WAIT_MS) {
-      // Verificar se chegaram mais mensagens do cliente APÓS esta mensagem
-      const { data: newerMessages, error: newerMsgError } = await supabaseAdmin
-        .from("whatsapp_messages")
-        .select("id, message_content, timestamp")
-        .eq("session_id", session.id)
-        .eq("sender", "client")
-        .gt("timestamp", currentMessageTimestamp)
-        .order("timestamp", { ascending: false })
-        .limit(1);
-      
-      if (!newerMsgError && newerMessages && newerMessages.length > 0) {
-        // Há mensagens mais novas - este webhook deve encerrar
-        // A mensagem mais recente vai processar todo o lote
-        console.log(`📨 Mensagem mais nova detectada. Este webhook vai encerrar.`);
-        console.log(`   Esta mensagem: ${insertedClientMessage.id} (${currentMessageTimestamp})`);
-        console.log(`   Mensagem mais nova: ${newerMessages[0].id} (${newerMessages[0].timestamp})`);
-        return new Response(JSON.stringify({ 
-          success: true, 
-          clientMessageId: insertedClientMessage.id,
-          batched: true,
-          reason: "Mensagem mais nova detectada - este webhook encerrou para evitar duplicação"
-        }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-          status: 200,
-        });
-      }
-      
-      // Verificar se há mensagens recentes (últimos 3 segundos) indicando que cliente ainda está digitando
-      const { data: veryRecentMessages } = await supabaseAdmin
-        .from("whatsapp_messages")
-        .select("id, timestamp")
-        .eq("session_id", session.id)
-        .eq("sender", "client")
-        .gte("timestamp", new Date(Date.now() - 3000).toISOString())
-        .order("timestamp", { ascending: false });
-      
-      // Se a mensagem mais recente é esta (não há novas nos últimos 3s), podemos prosseguir
-      if (!veryRecentMessages || veryRecentMessages.length === 0 || 
-          (veryRecentMessages.length === 1 && veryRecentMessages[0].id === insertedClientMessage.id)) {
-        console.log(`✅ Cliente parou de digitar. Prosseguindo com geração de resposta.`);
-        break;
-      }
-      
-      // Ainda há atividade recente, esperar mais um pouco
-      console.log(`⏳ Atividade recente detectada, aguardando mais ${CHECK_INTERVAL_MS}ms...`);
-      await new Promise(resolve => setTimeout(resolve, CHECK_INTERVAL_MS));
-      totalWaitTime += CHECK_INTERVAL_MS;
+    // PASSO 2: Delay de verificação para garantir que mensagens em trânsito cheguem
+    await new Promise(resolve => setTimeout(resolve, VERIFICATION_DELAY_MS));
+    
+    // PASSO 3: Buscar a mensagem mais recente do cliente desta sessão
+    const { data: mostRecentMessage, error: recentError } = await supabaseAdmin
+      .from("whatsapp_messages")
+      .select("id, message_content, timestamp")
+      .eq("session_id", session.id)
+      .eq("sender", "client")
+      .order("timestamp", { ascending: false })
+      .limit(1)
+      .single();
+    
+    if (recentError) {
+      console.error("Erro ao buscar mensagem mais recente:", recentError);
     }
     
-    if (totalWaitTime >= MAX_WAIT_MS) {
-      console.log(`⚠️ Tempo máximo de espera atingido (${MAX_WAIT_MS}ms). Prosseguindo mesmo assim.`);
+    // PASSO 4: Verificar se esta mensagem é a mais recente
+    if (mostRecentMessage && mostRecentMessage.id !== insertedClientMessage.id) {
+      // Não somos a mensagem mais recente - encerrar
+      console.log(`📨 BATCHING: Esta NÃO é a mensagem mais recente.`);
+      console.log(`   Esta: ${insertedClientMessage.id}`);
+      console.log(`   Mais recente: ${mostRecentMessage.id}`);
+      console.log(`   Encerrando este webhook - outra instância vai processar.`);
+      
+      return new Response(JSON.stringify({ 
+        success: true, 
+        clientMessageId: insertedClientMessage.id,
+        batched: true,
+        reason: "Outra mensagem mais recente será processada"
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 200,
+      });
     }
     
-    console.log(`=== BATCHING CONCLUÍDO - TOTAL: ${totalWaitTime}ms ===`);
+    // ESTA É A MENSAGEM MAIS RECENTE - buscar todas as mensagens recentes para processar juntas
+    console.log(`✅ BATCHING: Esta É a mensagem mais recente!`);
+    
+    // Buscar todas as mensagens do cliente nas últimas N segundos (janela de batch + margem)
+    const batchWindowStart = new Date(Date.now() - (BATCH_WINDOW_MS + VERIFICATION_DELAY_MS + 10000)).toISOString();
+    
+    const { data: recentMessages, error: fetchError } = await supabaseAdmin
+      .from("whatsapp_messages")
+      .select("id, message_content, timestamp")
+      .eq("session_id", session.id)
+      .eq("sender", "client")
+      .gte("timestamp", batchWindowStart)
+      .order("timestamp", { ascending: true }); // Ordenar cronologicamente
+    
+    if (fetchError) {
+      console.error("Erro ao buscar mensagens recentes:", fetchError);
+    }
+    
+    console.log(`📝 BATCHING: ${recentMessages?.length || 0} mensagens na janela de batch`);
+    
+    // Se há múltiplas mensagens, combinar o conteúdo para o GPT
+    if (recentMessages && recentMessages.length > 1) {
+      const combinedContent = recentMessages
+        .map((m, i) => `[Mensagem ${i + 1}]: ${m.message_content}`)
+        .join('\n');
+      
+      console.log(`📝 BATCH: Combinando ${recentMessages.length} mensagens:`);
+      console.log(combinedContent.substring(0, 500) + '...');
+      
+      // Atualizar clientMessage com todas as mensagens combinadas
+      clientMessage = combinedContent;
+    }
+    
+    console.log(`=== BATCHING CONCLUÍDO - TOTAL ESPERA: ${BATCH_WINDOW_MS + VERIFICATION_DELAY_MS}ms ===`);
 
     // Chamar a função GPT para gerar resposta (texto, áudio transcrito e imagem)
     console.log("=== CHAMANDO FUNÇÃO GPT-AGENT ===");
