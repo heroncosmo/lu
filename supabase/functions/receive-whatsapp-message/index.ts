@@ -247,6 +247,9 @@ serve(async (req) => {
   }
 
   try {
+    // Variável para armazenar função de liberação de lock (definida durante o batching)
+    let releaseLock: (() => Promise<void>) | null = null;
+    
     const supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
@@ -716,97 +719,271 @@ Responda APENAS com: oferta, quente, morno ou frio`;
       });
     }
 
-    // === MESSAGE BATCHING ROBUSTO ===
-    // Problema: Cliente envia várias mensagens em sequência rápida
-    // Solução: Usar um sistema de "última mensagem ganha" com verificação pós-delay
+    // === MESSAGE BATCHING INTELIGENTE V3 ===
+    // Problema: Cliente envia várias mensagens em sequência rápida, gerando múltiplas respostas
+    // 
+    // SOLUÇÃO PERFEITA:
+    // 1. Esperar janela inicial para dar tempo de mais mensagens chegarem
+    // 2. Loop de estabilização SEM LIMITE FIXO - enquanto o cliente enviar, continuar esperando
+    // 3. Aumentar o tempo de espera progressivamente (exponential backoff) para textos longos
+    // 4. Tentar adquirir LOCK na sessão (apenas UMA instância consegue)
+    // 5. Buscar TODAS as mensagens do cliente após a última resposta da IA
+    // 6. Gerar UMA resposta consolidada
     //
-    // LÓGICA:
-    // 1. Esta mensagem espera um delay fixo
-    // 2. Após o delay, verifica se é a mensagem mais recente do cliente
-    // 3. Se NÃO for a mais recente, encerra (outra vai processar)
-    // 4. Se for a mais recente, coleta TODAS as mensagens recentes e processa juntas
+    // LÓGICA DE ESTABILIZAÇÃO:
+    // - Se não chegou mensagem nova em X segundos, cliente parou de digitar → processar
+    // - Se chegou mensagem nova, resetar o timer e esperar mais
+    // - Tempo de espera entre checks: começa em 3s, aumenta até 8s progressivamente
+    // - Isso permite que o cliente digite mensagens longas sem interrupção
     
-    const BATCH_WINDOW_MS = 5000; // Janela de 5 segundos para coletar mensagens
-    const VERIFICATION_DELAY_MS = 2000; // Delay adicional para confirmar
+    const INITIAL_WAIT_MS = 3000; // Espera inicial de 3s
+    const MIN_CHECK_INTERVAL_MS = 3000; // Mínimo entre verificações: 3s
+    const MAX_CHECK_INTERVAL_MS = 8000; // Máximo entre verificações: 8s
+    const STABILITY_THRESHOLD = 2; // Quantas verificações sem mudança = estabilizado
+    const ABSOLUTE_MAX_WAIT_MS = 300000; // Máximo absoluto: 5 minutos (segurança)
+    const LOCK_TIMEOUT_MS = 180000; // Lock expira após 3 minutos (tempo de processamento GPT)
     
-    console.log(`=== BATCHING: INICIANDO ESPERA DE ${BATCH_WINDOW_MS + VERIFICATION_DELAY_MS}ms ===`);
+    console.log(`=== BATCHING V3: ESTABILIZAÇÃO INTELIGENTE ===`);
     console.log(`Esta mensagem ID: ${insertedClientMessage.id}`);
-    const thisMessageTimestamp = insertedClientMessage.timestamp || new Date().toISOString();
-    console.log(`Timestamp: ${thisMessageTimestamp}`);
+    console.log(`Session ID: ${session.id}`);
+    const startTime = Date.now();
     
-    // PASSO 1: Esperar a janela de batch para permitir mais mensagens chegarem
-    await new Promise(resolve => setTimeout(resolve, BATCH_WINDOW_MS));
+    // PASSO 1: Espera inicial para coletar primeiras mensagens
+    console.log(`⏳ Aguardando janela inicial de ${INITIAL_WAIT_MS}ms...`);
+    await new Promise(resolve => setTimeout(resolve, INITIAL_WAIT_MS));
     
-    // PASSO 2: Delay de verificação para garantir que mensagens em trânsito cheguem
-    await new Promise(resolve => setTimeout(resolve, VERIFICATION_DELAY_MS));
+    // PASSO 2: Loop de estabilização inteligente
+    let lastSeenMessageId = insertedClientMessage.id;
+    let lastSeenTimestamp = insertedClientMessage.timestamp || new Date().toISOString();
+    let consecutiveStableChecks = 0; // Quantas verificações seguidas sem mudança
+    let totalChecks = 0;
+    let currentCheckInterval = MIN_CHECK_INTERVAL_MS;
     
-    // PASSO 3: Buscar a mensagem mais recente do cliente desta sessão
-    const { data: mostRecentMessage, error: recentError } = await supabaseAdmin
-      .from("whatsapp_messages")
-      .select("id, message_content, timestamp")
-      .eq("session_id", session.id)
-      .eq("sender", "client")
-      .order("timestamp", { ascending: false })
-      .limit(1)
-      .single();
-    
-    if (recentError) {
-      console.error("Erro ao buscar mensagem mais recente:", recentError);
+    while (true) {
+      // Verificar tempo total para evitar loop infinito
+      const elapsedMs = Date.now() - startTime;
+      if (elapsedMs >= ABSOLUTE_MAX_WAIT_MS) {
+        console.log(`⏰ Tempo máximo absoluto atingido (${ABSOLUTE_MAX_WAIT_MS/1000}s). Processando agora.`);
+        break;
+      }
+      
+      // Verificar a mensagem mais recente do cliente
+      const { data: newestMsg } = await supabaseAdmin
+        .from("whatsapp_messages")
+        .select("id, timestamp, message_content")
+        .eq("session_id", session.id)
+        .eq("sender", "client")
+        .order("timestamp", { ascending: false })
+        .limit(1)
+        .single();
+      
+      if (!newestMsg) {
+        console.log(`⚠️ Nenhuma mensagem encontrada. Continuando...`);
+        break;
+      }
+      
+      totalChecks++;
+      
+      if (newestMsg.id === lastSeenMessageId) {
+        // Nenhuma mensagem nova nesta verificação
+        consecutiveStableChecks++;
+        console.log(`📭 Check ${totalChecks}: Sem novas mensagens. Estável: ${consecutiveStableChecks}/${STABILITY_THRESHOLD}`);
+        
+        if (consecutiveStableChecks >= STABILITY_THRESHOLD) {
+          // Cliente parou de enviar - estabilizado!
+          const totalWait = Date.now() - startTime;
+          console.log(`✅ ESTABILIZADO após ${totalChecks} verificações (${Math.round(totalWait/1000)}s total).`);
+          console.log(`   Última mensagem: ${newestMsg.id}`);
+          break;
+        }
+        
+        // Reduzir o intervalo já que está estabilizando
+        currentCheckInterval = Math.max(MIN_CHECK_INTERVAL_MS, currentCheckInterval - 1000);
+      } else {
+        // Nova mensagem chegou! Resetar contagem e aumentar tempo de espera
+        console.log(`📨 Check ${totalChecks}: NOVA MENSAGEM! ID: ${newestMsg.id}`);
+        console.log(`   Conteúdo: "${newestMsg.message_content?.substring(0, 50)}..."`);
+        
+        lastSeenMessageId = newestMsg.id;
+        lastSeenTimestamp = newestMsg.timestamp;
+        consecutiveStableChecks = 0; // Resetar
+        
+        // Aumentar intervalo progressivamente (cliente está digitando mais)
+        currentCheckInterval = Math.min(MAX_CHECK_INTERVAL_MS, currentCheckInterval + 1500);
+        console.log(`   Próximo check em: ${currentCheckInterval}ms (adaptativo)`);
+      }
+      
+      // Esperar antes da próxima verificação
+      await new Promise(resolve => setTimeout(resolve, currentCheckInterval));
     }
     
-    // PASSO 4: Verificar se esta mensagem é a mais recente
-    if (mostRecentMessage && mostRecentMessage.id !== insertedClientMessage.id) {
-      // Não somos a mensagem mais recente - encerrar
-      console.log(`📨 BATCHING: Esta NÃO é a mensagem mais recente.`);
-      console.log(`   Esta: ${insertedClientMessage.id}`);
-      console.log(`   Mais recente: ${mostRecentMessage.id}`);
-      console.log(`   Encerrando este webhook - outra instância vai processar.`);
+    const totalStabilizationTime = Date.now() - startTime;
+    console.log(`=== ESTABILIZAÇÃO CONCLUÍDA: ${Math.round(totalStabilizationTime/1000)}s, ${totalChecks} checks ===`);
+    
+    // PASSO 3: Tentar adquirir LOCK na sessão usando UPDATE condicional
+    // Apenas UMA instância conseguirá atualizar se batch_lock_until for null ou expirado
+    const now = new Date();
+    const lockUntil = new Date(now.getTime() + LOCK_TIMEOUT_MS).toISOString();
+    const lockId = `${insertedClientMessage.id}-${now.getTime()}`;
+    
+    console.log(`🔒 Tentando adquirir lock para sessão ${session.id}...`);
+    
+    // Primeiro, verificar estado atual do lock
+    const { data: sessionState, error: sessionStateError } = await supabaseAdmin
+      .from("prospecting_sessions")
+      .select("id, batch_lock_until, batch_lock_id")
+      .eq("id", session.id)
+      .single();
+    
+    // Se houver erro (ex: colunas não existem), continuar sem lock (fallback para lógica antiga)
+    let lockAcquired = false;
+    
+    if (sessionStateError) {
+      console.warn(`⚠️ Erro ao verificar lock (colunas podem não existir): ${sessionStateError.message}`);
+      console.log(`   Continuando sem sistema de lock...`);
+      lockAcquired = true; // Fingir que adquirimos para continuar
+    } else {
+      // Verificar se já existe lock ativo (não expirado)
+      if (sessionState?.batch_lock_until) {
+        const lockExpiry = new Date(sessionState.batch_lock_until);
+        if (lockExpiry > now) {
+          // Lock ativo - outra instância está processando
+          console.log(`🔒 Lock ATIVO encontrado (expira em ${Math.round((lockExpiry.getTime() - now.getTime()) / 1000)}s).`);
+          console.log(`   Lock ID: ${sessionState.batch_lock_id}`);
+          console.log(`   Encerrando - outra instância vai processar.`);
+          
+          return new Response(JSON.stringify({ 
+            success: true, 
+            clientMessageId: insertedClientMessage.id,
+            batched: true,
+            reason: "Outra instância já está processando (lock ativo)"
+          }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 200,
+          });
+        }
+      }
       
+      // Tentar adquirir o lock com UPDATE condicional
+      const { data: lockResult, error: lockError } = await supabaseAdmin
+        .from("prospecting_sessions")
+        .update({ 
+          batch_lock_until: lockUntil,
+          batch_lock_id: lockId,
+          updated_at: now.toISOString()
+        })
+        .eq("id", session.id)
+        .or(`batch_lock_until.is.null,batch_lock_until.lt.${now.toISOString()}`)
+        .select("id")
+        .single();
+      
+      if (lockError || !lockResult) {
+        // Falha ao adquirir lock - outra instância foi mais rápida ou colunas não existem
+        if (lockError?.message?.includes('column')) {
+          // Colunas não existem, continuar sem lock
+          console.warn(`⚠️ Colunas de lock não existem: ${lockError.message}`);
+          console.log(`   Continuando sem sistema de lock...`);
+          lockAcquired = true;
+        } else {
+          console.log(`🔒 Falha ao adquirir lock (race condition). Outra instância ganhou.`);
+          console.log(`   Encerrando este webhook.`);
+          
+          return new Response(JSON.stringify({ 
+            success: true, 
+            clientMessageId: insertedClientMessage.id,
+            batched: true,
+            reason: "Outra instância adquiriu o lock primeiro"
+          }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 200,
+          });
+        }
+      } else {
+        console.log(`🔒 LOCK ADQUIRIDO! Lock ID: ${lockId}`);
+        lockAcquired = true;
+      }
+    }
+    
+    // Se não conseguimos adquirir o lock por algum motivo, encerrar
+    if (!lockAcquired) {
+      console.log(`🔒 Não foi possível adquirir lock. Encerrando.`);
       return new Response(JSON.stringify({ 
         success: true, 
         clientMessageId: insertedClientMessage.id,
         batched: true,
-        reason: "Outra mensagem mais recente será processada"
+        reason: "Não foi possível adquirir lock"
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 200,
       });
     }
     
-    // ESTA É A MENSAGEM MAIS RECENTE - buscar todas as mensagens recentes para processar juntas
-    console.log(`✅ BATCHING: Esta É a mensagem mais recente!`);
+    // PASSO 4: Buscar a última mensagem da IA para esta sessão
+    const { data: lastAgentMessage } = await supabaseAdmin
+      .from("whatsapp_messages")
+      .select("id, timestamp")
+      .eq("session_id", session.id)
+      .eq("sender", "agent")
+      .order("timestamp", { ascending: false })
+      .limit(1)
+      .single();
     
-    // Buscar todas as mensagens do cliente nas últimas N segundos (janela de batch + margem)
-    const batchWindowStart = new Date(Date.now() - (BATCH_WINDOW_MS + VERIFICATION_DELAY_MS + 10000)).toISOString();
-    
-    const { data: recentMessages, error: fetchError } = await supabaseAdmin
+    // PASSO 5: Buscar TODAS as mensagens do cliente APÓS a última da IA
+    let messagesQuery = supabaseAdmin
       .from("whatsapp_messages")
       .select("id, message_content, timestamp")
       .eq("session_id", session.id)
       .eq("sender", "client")
-      .gte("timestamp", batchWindowStart)
-      .order("timestamp", { ascending: true }); // Ordenar cronologicamente
+      .order("timestamp", { ascending: true });
     
-    if (fetchError) {
-      console.error("Erro ao buscar mensagens recentes:", fetchError);
+    if (lastAgentMessage?.timestamp) {
+      // Só mensagens após a última resposta da IA
+      messagesQuery = messagesQuery.gt("timestamp", lastAgentMessage.timestamp);
+      console.log(`📝 Buscando mensagens do cliente após última IA: ${lastAgentMessage.timestamp}`);
+    } else {
+      console.log(`📝 Primeira interação - buscando todas as mensagens do cliente`);
     }
     
-    console.log(`📝 BATCHING: ${recentMessages?.length || 0} mensagens na janela de batch`);
+    const { data: pendingMessages, error: fetchError } = await messagesQuery;
+    
+    if (fetchError) {
+      console.error("Erro ao buscar mensagens pendentes:", fetchError);
+    }
+    
+    const messageCount = pendingMessages?.length || 0;
+    console.log(`📝 BATCHING: ${messageCount} mensagem(ns) pendente(s) para processar`);
     
     // Se há múltiplas mensagens, combinar o conteúdo para o GPT
-    if (recentMessages && recentMessages.length > 1) {
-      const combinedContent = recentMessages
+    if (pendingMessages && pendingMessages.length > 1) {
+      const combinedContent = pendingMessages
         .map((m, i) => `[Mensagem ${i + 1}]: ${m.message_content}`)
         .join('\n');
       
-      console.log(`📝 BATCH: Combinando ${recentMessages.length} mensagens:`);
-      console.log(combinedContent.substring(0, 500) + '...');
+      console.log(`📝 BATCH: Combinando ${pendingMessages.length} mensagens:`);
+      console.log(combinedContent.substring(0, 500) + (combinedContent.length > 500 ? '...' : ''));
       
       // Atualizar clientMessage com todas as mensagens combinadas
       clientMessage = combinedContent;
+    } else if (pendingMessages && pendingMessages.length === 1) {
+      // Só 1 mensagem, usar diretamente
+      clientMessage = pendingMessages[0].message_content;
     }
     
-    console.log(`=== BATCHING CONCLUÍDO - TOTAL ESPERA: ${BATCH_WINDOW_MS + VERIFICATION_DELAY_MS}ms ===`);
+    console.log(`=== BATCHING V2 CONCLUÍDO - ${messageCount} mensagens consolidadas ===`);
+    
+    // Atribuir função para liberar o lock após processamento (será chamada no final)
+    releaseLock = async () => {
+      try {
+        await supabaseAdmin
+          .from("prospecting_sessions")
+          .update({ batch_lock_until: null, batch_lock_id: null })
+          .eq("id", session.id)
+          .eq("batch_lock_id", lockId); // Só liberar se ainda for nosso lock
+        console.log(`🔓 Lock liberado: ${lockId}`);
+      } catch (e) {
+        console.error("Erro ao liberar lock:", e);
+      }
+    };
 
     // Chamar a função GPT para gerar resposta (texto, áudio transcrito e imagem)
     console.log("=== CHAMANDO FUNÇÃO GPT-AGENT ===");
@@ -875,6 +1052,7 @@ Responda APENAS com: oferta, quente, morno ou frio`;
     if (gptData.cancelled) {
       console.log(`⚠️ Resposta cancelada: ${gptData.reason}`);
       console.log(`   Outra instância do webhook vai processar as mensagens mais recentes.`);
+      await releaseLock(); // Liberar lock antes de encerrar
       return new Response(JSON.stringify({ 
         success: true, 
         clientMessageId: insertedClientMessage.id,
@@ -893,6 +1071,7 @@ Responda APENAS com: oferta, quente, morno ou frio`;
     // Se não há resposta válida, encerrar
     if (!agentReply) {
       console.log("⚠️ Nenhuma resposta do GPT-Agent");
+      await releaseLock(); // Liberar lock antes de encerrar
       return new Response(JSON.stringify({ 
         success: true, 
         clientMessageId: insertedClientMessage.id,
@@ -970,13 +1149,17 @@ Responda APENAS com: oferta, quente, morno ou frio`;
     
     console.log("✅ Sessão atualizada - frontend receberá via postgres_changes");
 
+    // Liberar o lock após processamento bem-sucedido
+    await releaseLock();
+
     console.log("=== FUNÇÃO CONCLUÍDA COM SUCESSO ===");
     return new Response(JSON.stringify({ 
       success: true, 
       clientMessageId: insertedClientMessage.id,
       agentMessageId: insertedAgentMessage.id,
       delays: delays,
-      whatsappSent: !!whatsappResponse
+      whatsappSent: !!whatsappResponse,
+      batchedMessages: pendingMessages?.length || 1
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 200,
@@ -984,6 +1167,15 @@ Responda APENAS com: oferta, quente, morno ou frio`;
 
   } catch (error) {
     console.error("=== ERRO NÃO TRATADO ===:", error);
+    // Tentar liberar lock em caso de erro (best effort)
+    try {
+      // Verificar se releaseLock foi definida (só existe após adquirir o lock)
+      if (releaseLock) {
+        await releaseLock();
+      }
+    } catch (e) {
+      console.error("Erro ao liberar lock no catch:", e);
+    }
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 500,
