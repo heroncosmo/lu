@@ -13,8 +13,8 @@ async function getApiKey(): Promise<string> {
   );
   
   await supabase.auth.signInWithPassword({ 
-    email: 'leandro@luchoacorp.com', 
-    password: 'Luchoa123!' 
+    email: 'calcadosdrielle@gmail.com', 
+    password: 'Ibira2019!' 
   });
   
   const { data: agents } = await supabase.from('agents').select('gpt_api_key').limit(1);
