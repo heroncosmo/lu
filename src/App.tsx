@@ -27,6 +27,7 @@ import SMTPConfig from "./pages/SMTPConfig";
 import TwilioConfig from "./pages/TwilioConfig";
 import UserManagement from "./pages/UserManagement";
 import UserSettings from "./pages/UserSettings";
+import ScheduledContacts from "./pages/ScheduledContacts";
 import { SessionContextProvider } from "./integrations/supabase/SessionContextProvider";
 import ProtectedRoute from "./components/ProtectedRoute";
 
@@ -50,6 +51,7 @@ const App = () => (
               <Route element={<Layout><CampaignDetails /></Layout>} path="/campaign-details" />
               <Route element={<Layout><CampaignBuilder /></Layout>} path="/campaign-builder" />
               <Route element={<Layout><KanbanBoard /></Layout>} path="/kanban" />
+              <Route element={<Layout><ScheduledContacts /></Layout>} path="/scheduled-contacts" />
               <Route element={<Layout><ParticipantManagement /></Layout>} path="/participants/:campaignId" />
               <Route element={<Layout><WhatsAppInstances /></Layout>} path="/whatsapp-instances" />
               <Route element={<Layout><Prospecting /></Layout>} path="/prospecting" />

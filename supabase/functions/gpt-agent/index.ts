@@ -212,6 +212,32 @@ FORMATO DAS RESPOSTAS:
 
 IMPORTANTE: Sua personalidade e forma de falar devem seguir EXATAMENTE as instruções do agente fornecidas acima.
 
+=== DETECÇÃO AUTOMÁTICA DE AGENDAMENTOS ===
+ANALISE TODO O HISTÓRICO DA CONVERSA para detectar se o cliente PEDIU para ser contatado em um momento futuro.
+Exemplos de pedidos:
+- "fala comigo daqui 2 horas" → agendar 2 horas
+- "me chama amanhã" → agendar 1 dia
+- "pode ligar daqui 30 minutos" → agendar 30 minutos
+- "volta a falar comigo em 5 minutos" → agendar 5 minutos
+- "agora não dá, me liga depois" → agendar 1 hora (default)
+- "tô ocupado, volta depois" → agendar 1 hora (default)
+
+SE detectar um pedido de agendamento, INCLUA no final da sua resposta:
+[AGENDAR:X:UNIDADE:MOTIVO]
+
+Onde:
+- X = número (ex: 2, 30, 5)
+- UNIDADE = minutes, hours ou days
+- MOTIVO = breve descrição
+
+Exemplos de formato:
+[AGENDAR:5:minutes:Cliente pediu para falar daqui 5 minutos]
+[AGENDAR:2:hours:Cliente está ocupado]
+[AGENDAR:1:days:Retomar conversa amanhã]
+
+Se NÃO houver pedido de agendamento, NÃO inclua nada extra.
+O sistema vai remover essa tag antes de enviar ao cliente.
+
 Exemplo de formato correto:
 Que bom ouvir isso, Rodrigo! Tudo tranquilo por aqui também, graças a Deus. Como estão as coisas por aí? Muita porreria ou tá de boa?`;
 
@@ -390,6 +416,74 @@ Que bom ouvir isso, Rodrigo! Tudo tranquilo por aqui também, graças a Deus. Co
       .replace(/\?\s+/g, '? ') // Garantir espaço após pontos de interrogação
       .replace(/\!\s+/g, '! '); // Garantir espaço após pontos de exclamação
 
+    // === DETECTAR E PROCESSAR AGENDAMENTO NA RESPOSTA ===
+    // Formato: [AGENDAR:X:UNIDADE:MOTIVO]
+    const scheduleRegex = /\[AGENDAR:(\d+):(\w+):([^\]]+)\]/i;
+    const scheduleMatch = gptMessage.match(scheduleRegex);
+    
+    if (scheduleMatch) {
+      console.log("=== AGENDAMENTO DETECTADO NA RESPOSTA DA IA ===");
+      const timeValue = parseInt(scheduleMatch[1]);
+      const timeUnit = scheduleMatch[2].toLowerCase();
+      const reason = scheduleMatch[3];
+      
+      console.log(`Tempo: ${timeValue} ${timeUnit}`);
+      console.log(`Motivo: ${reason}`);
+      
+      // Remover a tag da mensagem antes de enviar ao cliente
+      gptMessage = gptMessage.replace(scheduleRegex, '').trim();
+      
+      // Calcular a data/hora do agendamento
+      const now = new Date();
+      let scheduledFor = new Date(now);
+      
+      switch (timeUnit) {
+        case 'minutes':
+          scheduledFor.setMinutes(scheduledFor.getMinutes() + timeValue);
+          break;
+        case 'hours':
+          scheduledFor.setHours(scheduledFor.getHours() + timeValue);
+          break;
+        case 'days':
+          scheduledFor.setDate(scheduledFor.getDate() + timeValue);
+          break;
+        default:
+          scheduledFor.setHours(scheduledFor.getHours() + 1); // Default 1 hora
+      }
+      
+      console.log(`📅 Agendando contato para: ${scheduledFor.toISOString()}`);
+      
+      // Criar resumo do contexto da conversa (últimas 5 mensagens)
+      const conversationContext = messages.slice(-5).map((m: any) => 
+        `${m.sender === 'agent' ? 'Você' : sessionData.client_name}: ${m.message_content}`
+      ).join('\n');
+      
+      // Salvar o agendamento no banco
+      try {
+        const { error: scheduleError } = await supabaseAdmin
+          .from('scheduled_contacts')
+          .insert({
+            session_id: session_id,
+            client_name: sessionData.client_name,
+            client_whatsapp_number: sessionData.client_whatsapp_number,
+            scheduled_for: scheduledFor.toISOString(),
+            reason: reason,
+            context: `${reason}
+
+CONTEXTO DA CONVERSA ANTERIOR:
+${conversationContext}`,
+          });
+        
+        if (scheduleError) {
+          console.error("❌ Erro ao salvar agendamento:", scheduleError);
+        } else {
+          console.log("✅ Agendamento salvo com sucesso!");
+        }
+      } catch (err) {
+        console.error("❌ Exceção ao salvar agendamento:", err);
+      }
+    }
+
     console.log("=== MENSAGEM FORMATADA (ÚNICO PARÁGRAFO) ===");
     console.log("Mensagem final:", gptMessage);
 
@@ -411,115 +505,6 @@ Que bom ouvir isso, Rodrigo! Tudo tranquilo por aqui também, graças a Deus. Co
     console.log(`=== SIMULANDO TEMPO DE DIGITAÇÃO ===`);
     console.log(`Simulando digitação de ${wordCount} palavras (${typingDelay}ms)...`);
     await delay(typingDelay);
-
-    // === DETECÇÃO DE SOLICITAÇÃO DE AGENDAMENTO ===
-    // Verificar se o cliente pediu para ser contatado em um horário específico
-    try {
-      console.log("=== VERIFICANDO SOLICITAÇÃO DE AGENDAMENTO ===");
-      
-      const lastClientMessage = messages.filter((m: any) => m.sender !== 'agent').pop();
-      if (lastClientMessage) {
-        const scheduleDetectionPrompt = `Analise a última mensagem do cliente e determine se ele está solicitando que a conversa seja retomada em um momento futuro específico.
-
-ÚLTIMA MENSAGEM DO CLIENTE: "${lastClientMessage.message_content}"
-RESPOSTA DO AGENTE: "${gptMessage}"
-
-Retorne um JSON com:
-{
-  "has_schedule_request": true/false,
-  "time_value": número (ex: 2),
-  "time_unit": "minutes" | "hours" | "days",
-  "reason": "descrição breve do motivo do agendamento",
-  "context": "resumo do que precisa ser retomado na conversa"
-}
-
-EXEMPLOS DE SOLICITAÇÕES:
-- "fala comigo daqui 2 horas" → {"has_schedule_request": true, "time_value": 2, "time_unit": "hours", ...}
-- "me chama amanhã" → {"has_schedule_request": true, "time_value": 1, "time_unit": "days", ...}
-- "volta a falar comigo em 30 minutos" → {"has_schedule_request": true, "time_value": 30, "time_unit": "minutes", ...}
-- "ok, pode me ligar daqui 3 dias" → {"has_schedule_request": true, "time_value": 3, "time_unit": "days", ...}
-- "beleza" (sem agendamento) → {"has_schedule_request": false}
-- "ok" (sem agendamento) → {"has_schedule_request": false}
-
-Se NÃO houver solicitação de agendamento, retorne {"has_schedule_request": false}.
-Retorne APENAS o JSON, sem explicações.`;
-
-        const scheduleResponse = await fetch("https://api.openai.com/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${agent.gpt_api_key}`,
-          },
-          body: JSON.stringify({
-            model: "gpt-3.5-turbo",
-            messages: [{ role: "user", content: scheduleDetectionPrompt }],
-            max_tokens: 200,
-            temperature: 0.1,
-          }),
-        });
-
-        if (scheduleResponse.ok) {
-          const scheduleJson = await scheduleResponse.json();
-          let scheduleText = scheduleJson.choices[0].message.content.trim();
-          scheduleText = scheduleText.replace(/```json\n?/g, '').replace(/```\n?/g, '');
-          
-          try {
-            const scheduleData = JSON.parse(scheduleText);
-            console.log("Detecção de agendamento:", JSON.stringify(scheduleData, null, 2));
-            
-            if (scheduleData.has_schedule_request && scheduleData.time_value && scheduleData.time_unit) {
-              // Calcular a data/hora do agendamento
-              const now = new Date();
-              let scheduledFor = new Date(now);
-              
-              switch (scheduleData.time_unit) {
-                case 'minutes':
-                  scheduledFor.setMinutes(scheduledFor.getMinutes() + scheduleData.time_value);
-                  break;
-                case 'hours':
-                  scheduledFor.setHours(scheduledFor.getHours() + scheduleData.time_value);
-                  break;
-                case 'days':
-                  scheduledFor.setDate(scheduledFor.getDate() + scheduleData.time_value);
-                  break;
-              }
-              
-              console.log(`📅 Agendando contato para: ${scheduledFor.toISOString()}`);
-              
-              // Criar resumo do contexto da conversa
-              const conversationContext = messages.slice(-5).map((m: any) => 
-                `${m.sender === 'agent' ? 'Você' : sessionData.client_name}: ${m.message_content}`
-              ).join('\n');
-              
-              // Salvar o agendamento no banco
-              const { error: scheduleError } = await supabaseAdmin
-                .from('scheduled_contacts')
-                .insert({
-                  session_id: session_id,
-                  client_name: sessionData.client_name,
-                  client_whatsapp_number: sessionData.client_whatsapp_number,
-                  scheduled_for: scheduledFor.toISOString(),
-                  reason: scheduleData.reason || `Cliente pediu para falar daqui ${scheduleData.time_value} ${scheduleData.time_unit}`,
-                  context: `${scheduleData.context || 'Retomar conversa'}
-
-CONTEXTO DA CONVERSA ANTERIOR:
-${conversationContext}`,
-                });
-              
-              if (scheduleError) {
-                console.error("❌ Erro ao salvar agendamento:", scheduleError);
-              } else {
-                console.log("✅ Agendamento salvo com sucesso!");
-              }
-            }
-          } catch (parseError) {
-            console.log("Não foi possível parsear detecção de agendamento:", scheduleText);
-          }
-        }
-      }
-    } catch (scheduleError) {
-      console.log("Erro na detecção de agendamento (não crítico):", scheduleError);
-    }
 
     // === EXTRAÇÃO AUTOMÁTICA DE ANOTAÇÕES ===
     // Analisar a conversa para extrair insights sobre o cliente

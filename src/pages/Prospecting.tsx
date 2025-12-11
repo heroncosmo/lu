@@ -12,9 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { toast } from 'sonner';
-import { Loader2, AlertCircle, Wifi, WifiOff, X, RotateCcw, Brain, Calendar } from 'lucide-react';
+import { Loader2, AlertCircle, Wifi, WifiOff, X, RotateCcw, Brain } from 'lucide-react';
 import { useUserProfile } from '@/hooks/useUserProfile';
-import { ScheduledContactsCalendar } from '@/components/ScheduledContactsCalendar';
 
 type Agent = { id: string; name: string; gpt_model?: string };
 type WhatsAppInstance = { id: string; name: string; phone_number: string | null; status: string; };
@@ -40,7 +39,6 @@ const Prospecting = () => {
   const [error, setError] = useState<string | null>(null);
   const [realtimeStatus, setRealtimeStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [showCalendar, setShowCalendar] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const channelRef = useRef<any>(null);
 
@@ -486,21 +484,6 @@ const Prospecting = () => {
 
   return (
     <div className="container mx-auto p-4">
-      {/* Botão de Calendário Flutuante */}
-      <div className="fixed top-20 right-6 z-50">
-        <Button
-          onClick={() => setShowCalendar(true)}
-          className="shadow-lg hover:shadow-xl transition-shadow"
-          size="lg"
-        >
-          <Calendar className="w-5 h-5 mr-2" />
-          Calendário de Agendamentos
-        </Button>
-      </div>
-
-      {/* Modal do Calendário */}
-      <ScheduledContactsCalendar open={showCalendar} onOpenChange={setShowCalendar} />
-
       <Card className="max-w-2xl mx-auto mb-8">
         <CardHeader>
           <CardTitle>Iniciar Nova Prospecção</CardTitle>

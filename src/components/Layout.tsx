@@ -27,6 +27,7 @@ import {
   UsersRound,
   ShieldCheck,
   SettingsIcon,
+  CalendarClock,
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -109,6 +110,13 @@ const ALL_NAV_SECTIONS: NavSection[] = [
         icon: FolderKanban,
         description: 'Pipeline de vendas',
         permissionKey: 'kanban',
+      },
+      {
+        title: 'Agendamentos',
+        href: '/scheduled-contacts',
+        icon: CalendarClock,
+        description: 'Contatos agendados pela IA',
+        permissionKey: 'playground',
       },
     ],
   },
