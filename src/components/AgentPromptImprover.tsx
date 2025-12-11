@@ -243,43 +243,30 @@ REGRAS:
 
 Responda em português brasileiro.`;
 
-      const conversationMessages = (allMessages || [])
+      // Limitar histórico às últimas 10 mensagens para performance
+      const recentMessages = (allMessages || [])
         .filter(m => m.role !== 'system')
-        .map(m => ({
-          role: m.role as 'user' | 'assistant',
-          content: m.content
-        }));
+        .slice(-10);
+      
+      const conversationMessages = recentMessages.map(m => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.content
+      }));
 
-      // === CONFIGURAÇÃO DE MODELOS OPENAI (Junho 2025) ===
-      const gptModel = agent.gpt_model || 'gpt-4o';
-      const isGpt5Series = gptModel.startsWith('gpt-5');
-      const isGpt41Series = gptModel.startsWith('gpt-4.1');
-      const isOSeries = gptModel.startsWith('o3') || gptModel.startsWith('o4');
-      const isNewModel = isGpt5Series || isGpt41Series || isOSeries;
+      // === ASSISTENTE DE PROMPTS: SEMPRE USAR GPT-5.1 ===
+      // Independente do modelo configurado no agente, o assistente de prompts
+      // sempre usa gpt-5.1 para melhor qualidade e consistência
+      const ASSISTANT_MODEL = 'gpt-5.1';
       
-      // Role: developer para modelos novos, system para legados
-      const systemRole = isNewModel ? "developer" : "system";
-      
-      // Parâmetros de tokens
-      const tokenParam = isNewModel ? { max_completion_tokens: 2000 } : { max_tokens: 2000 };
-      
-      // Parâmetros extras
-      let extraParams: Record<string, any> = {};
-      if (isGpt5Series) {
-        const isGpt51 = gptModel.startsWith('gpt-5.1');
-        extraParams = { reasoning_effort: isGpt51 ? "none" : "low" };
-      } else if (isOSeries) {
-        extraParams = { reasoning_effort: "low" };
-      } else if (isGpt41Series || !isNewModel) {
-        extraParams = { temperature: 0.7 };
-      }
+      // GPT-5.1: usa role "developer" e max_completion_tokens
+      // Com reasoning_effort: "none" para resposta rápida + temperature para criatividade
 
-      // Timeout de 180 segundos (3 minutos)
+      // Timeout de 30 segundos (suficiente para respostas normais)
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 180000);
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
 
       try {
-        // Chamar GPT via API
+        // Chamar GPT-5.1 via API (modelo fixo para o Assistente de Prompts)
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
           headers: {
@@ -288,14 +275,15 @@ Responda em português brasileiro.`;
           },
           signal: controller.signal,
           body: JSON.stringify({
-            model: gptModel,
+            model: ASSISTANT_MODEL,
             messages: [
-              { role: systemRole, content: systemPrompt },
+              { role: 'developer', content: systemPrompt },
               ...conversationMessages,
               { role: 'user', content: userMessage }
             ],
-            ...tokenParam,
-            ...extraParams
+            max_completion_tokens: 1000,
+            reasoning_effort: 'none',
+            temperature: 0.7
           })
         });
 
@@ -329,7 +317,7 @@ Responda em português brasileiro.`;
       } catch (fetchError: any) {
         clearTimeout(timeoutId);
         if (fetchError.name === 'AbortError') {
-          throw new Error('Timeout: A requisição demorou mais de 3 minutos');
+          throw new Error('A requisição demorou demais (30s). Tente novamente.');
         }
         throw fetchError;
       }
