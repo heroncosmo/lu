@@ -792,47 +792,46 @@ Responda APENAS com: oferta, quente, morno ou frio`;
     const totalWaitTime = Date.now() - startTime + INITIAL_WAIT_MS;
     console.log(`=== ESTABILIZAÇÃO CONCLUÍDA - TOTAL: ${Math.round(totalWaitTime / 1000)}s ===`);
 
-    // PASSO 3: TENTAR ADQUIRIR LOCK ATÔMICO
-    // Esta é a parte crítica - usar UPDATE com condição para garantir atomicidade
-    console.log(`🔒 Tentando adquirir lock atômico...`);
+    // PASSO 3: TENTAR ADQUIRIR LOCK ATÔMICO VIA RPC
+    // PROBLEMA DO V5 ANTERIOR: .or() não funciona em UPDATE do Supabase Client
+    // SOLUÇÃO: Usar RPC function com UPDATE ... WHERE nativo do PostgreSQL
+    console.log(`🔒 Tentando adquirir lock atômico via RPC...`);
     
-    const lockUntil = new Date(Date.now() + LOCK_DURATION_MS).toISOString();
+    const LOCK_TIMEOUT_SECONDS = 120;
     
-    // UPDATE atômico: só consegue se não houver lock ativo (null ou expirado)
-    const { data: lockAcquired, error: lockError } = await supabaseAdmin
-      .from("prospecting_sessions")
-      .update({
-        batch_lock_id: webhookId,
-        batch_lock_until: lockUntil
-      })
-      .eq("id", session.id)
-      .or(`batch_lock_until.is.null,batch_lock_until.lt.${new Date().toISOString()}`)
-      .select("id, batch_lock_id")
-      .single();
+    // Chamar RPC function que garante atomicidade real
+    const { data: lockResult, error: lockError } = await supabaseAdmin
+      .rpc('acquire_batch_lock', {
+        p_session_id: session.id,
+        p_webhook_id: webhookId,
+        p_lock_duration_seconds: LOCK_TIMEOUT_SECONDS
+      });
     
-    if (lockError || !lockAcquired) {
-      // Não conseguimos o lock - outro webhook já tem
-      console.log(`❌ Lock não adquirido - outro webhook está processando`);
-      console.log(`   Erro: ${lockError?.message || 'Nenhuma linha afetada'}`);
+    if (lockError) {
+      console.error(`❌ Erro ao tentar adquirir lock:`, lockError);
       return new Response(JSON.stringify({ 
         success: true, 
         clientMessageId: insertedClientMessage.id,
         batched: true,
-        reason: "Outro webhook já está processando"
+        reason: "Erro ao adquirir lock",
+        error: lockError.message
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 200,
       });
     }
     
-    // Verificar se realmente somos o dono do lock
-    if (lockAcquired.batch_lock_id !== webhookId) {
-      console.log(`❌ Lock pertence a outro webhook: ${lockAcquired.batch_lock_id}`);
+    const lockAcquired = lockResult?.[0]?.success || false;
+    const lockOwner = lockResult?.[0]?.lock_owner;
+    
+    if (!lockAcquired) {
+      // Não conseguimos o lock - outro webhook já tem
+      console.log(`❌ Lock não adquirido - pertence a: ${lockOwner}`);
       return new Response(JSON.stringify({ 
         success: true, 
         clientMessageId: insertedClientMessage.id,
         batched: true,
-        reason: "Lock pertence a outro webhook"
+        reason: `Lock pertence a ${lockOwner}`
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 200,
@@ -1007,16 +1006,18 @@ Responda APENAS com: oferta, quente, morno ou frio`;
     // ==============================================
     // LIBERAR O LOCK APÓS PROCESSAMENTO BEM SUCEDIDO
     // ==============================================
-    console.log(`[BATCHING V5] Liberando lock para sessão ${session.id}...`);
-    await supabaseAdmin
-      .from("prospecting_sessions")
-      .update({
-        batch_lock_id: null,
-        batch_lock_until: null
-      })
-      .eq("id", session.id)
-      .eq("batch_lock_id", webhookId); // Só libera se ainda somos donos do lock
-    console.log(`[BATCHING V5] ✅ Lock liberado com sucesso`);
+    console.log(`[BATCHING V6] Liberando lock via RPC para sessão ${session.id}...`);
+    const { data: releaseResult } = await supabaseAdmin
+      .rpc('release_batch_lock', {
+        p_session_id: session.id,
+        p_webhook_id: webhookId
+      });
+    
+    if (releaseResult) {
+      console.log(`[BATCHING V6] ✅ Lock liberado com sucesso`);
+    } else {
+      console.warn(`[BATCHING V6] ⚠️ Lock não foi liberado (não éramos mais donos ou já expirou)`);
+    }
 
     console.log("=== FUNÇÃO CONCLUÍDA COM SUCESSO ===");
     return new Response(JSON.stringify({ 
@@ -1037,18 +1038,20 @@ Responda APENAS com: oferta, quente, morno ou frio`;
     // @ts-ignore - webhookId e session podem não existir dependendo de onde o erro ocorreu
     if (typeof webhookId !== 'undefined' && typeof session !== 'undefined' && session?.id) {
       try {
-        console.log(`[BATCHING V5] Tentando liberar lock após erro para sessão ${session.id}...`);
-        await supabaseAdmin
-          .from("prospecting_sessions")
-          .update({
-            batch_lock_id: null,
-            batch_lock_until: null
-          })
-          .eq("id", session.id)
-          .eq("batch_lock_id", webhookId);
-        console.log(`[BATCHING V5] Lock liberado após erro`);
+        console.log(`[BATCHING V6] Tentando liberar lock após erro para sessão ${session.id}...`);
+        const { data: releaseResult } = await supabaseAdmin
+          .rpc('release_batch_lock', {
+            p_session_id: session.id,
+            p_webhook_id: webhookId
+          });
+        
+        if (releaseResult) {
+          console.log(`[BATCHING V6] Lock liberado após erro`);
+        } else {
+          console.warn(`[BATCHING V6] Lock não pôde ser liberado (não éramos donos)`);
+        }
       } catch (lockError) {
-        console.error(`[BATCHING V5] Erro ao liberar lock:`, lockError);
+        console.error(`[BATCHING V6] Erro ao liberar lock:`, lockError);
       }
     }
     
