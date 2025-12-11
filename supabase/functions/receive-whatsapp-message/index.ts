@@ -906,9 +906,18 @@ Responda APENAS com: oferta, quente, morno ou frio`;
     console.log("Dados completos:", JSON.stringify(gptData, null, 2));
     
     // Verificar se a resposta foi cancelada por nova mensagem do cliente
+    // NOTA: Isso não deve mais acontecer após correção V7 que removeu verificação do gpt-agent
     if (gptData.cancelled) {
       console.log(`⚠️ Resposta cancelada: ${gptData.reason}`);
-      console.log(`   Outra instância do webhook vai processar as mensagens mais recentes.`);
+      console.log(`   Liberando lock antes de encerrar...`);
+      
+      // CRÍTICO: Liberar lock para evitar travamento
+      await supabaseAdmin.rpc('release_batch_lock', {
+        p_session_id: session.id,
+        p_webhook_id: webhookId
+      });
+      console.log(`[BATCHING V7] Lock liberado após cancelamento`);
+      
       return new Response(JSON.stringify({ 
         success: true, 
         clientMessageId: insertedClientMessage.id,
@@ -927,6 +936,14 @@ Responda APENAS com: oferta, quente, morno ou frio`;
     // Se não há resposta válida, encerrar
     if (!agentReply) {
       console.log("⚠️ Nenhuma resposta do GPT-Agent");
+      
+      // CRÍTICO: Liberar lock antes de encerrar
+      await supabaseAdmin.rpc('release_batch_lock', {
+        p_session_id: session.id,
+        p_webhook_id: webhookId
+      });
+      console.log(`[BATCHING V7] Lock liberado após noReply`);
+      
       return new Response(JSON.stringify({ 
         success: true, 
         clientMessageId: insertedClientMessage.id,
