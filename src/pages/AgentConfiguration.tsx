@@ -200,13 +200,16 @@ const testGPTModel = async (apiKey: string, model: string): Promise<{ success: b
     const isGpt5Pro = model === 'gpt-5-pro';
     const isGpt41Series = model.startsWith('gpt-4.1');
     const isOSeries = model.startsWith('o3') || model.startsWith('o4');
-    const isNewModel = isGpt5Series || isGpt41Series || isOSeries;
     
-    // Token parameter: max_completion_tokens para modelos novos, max_tokens para legados
-    const tokenParam = isNewModel ? { max_completion_tokens: 200 } : { max_tokens: 50 };
+    // Reasoning models: GPT-5 e O-series (usam developer role + max_completion_tokens)
+    // Non-reasoning: GPT-4.1 e legados (usam system role + max_tokens)
+    const isReasoningModel = isGpt5Series || isOSeries;
     
-    // Role: developer para modelos novos, system para legados
-    const systemRole = isNewModel ? 'developer' : 'system';
+    // Token parameter
+    const tokenParam = isReasoningModel ? { max_completion_tokens: 200 } : { max_tokens: 50 };
+    
+    // Role: developer para reasoning models, system para non-reasoning
+    const systemRole = isReasoningModel ? 'developer' : 'system';
     
     // Parâmetros extras
     let extraParams: Record<string, any> = {};
@@ -619,18 +622,22 @@ ${userMessage.content}`;
       console.log('[chat] 🖼️ Com imagem:', !!currentImage);
       
       // === CONFIGURAÇÃO DE MODELOS OPENAI (Dezembro 2025) ===
-      // GPT-5.x e GPT-4.1: usam role "developer" (não "system")
-      // GPT-5 (exceto 5.1 com reasoning=none): não suportam temperature
+      // GPT-5.x: usam role "developer" (reasoning models)
+      // GPT-4.1.x: usam role "system" (non-reasoning, mais rápidos)
       // Modelos legados (gpt-4o, gpt-4-turbo): usam role "system" + temperature
       const isGpt5Series = agentModel.startsWith('gpt-5');
       const isGpt51 = agentModel.startsWith('gpt-5.1');
       const isGpt5Pro = agentModel === 'gpt-5-pro';
       const isGpt41Series = agentModel.startsWith('gpt-4.1');
       const isOSeries = agentModel.startsWith('o3') || agentModel.startsWith('o4');
-      const isNewModel = isGpt5Series || isGpt41Series || isOSeries;
       
-      // Role: developer para modelos novos, system para legados
-      const systemRole = isNewModel ? "developer" : "system";
+      // Role: developer APENAS para GPT-5 e O-series (reasoning models)
+      // GPT-4.1 e legados usam 'system'
+      const isReasoningModel = isGpt5Series || isOSeries;
+      const systemRole = isReasoningModel ? "developer" : "system";
+      
+      // Token param: max_completion_tokens para reasoning, max_tokens para non-reasoning
+      const useCompletionTokens = isReasoningModel;
       
       // CÁLCULO DINÂMICO DE TOKENS BASEADO NO TAMANHO DO PROMPT
       // O schema pede o documento completo de volta, então precisamos de tokens suficientes
@@ -643,8 +650,8 @@ ${userMessage.content}`;
       
       console.log(`[chat] 📐 Prompt: ${promptChars} chars → doc: ~${estimatedDocTokens} tokens → max: ${maxTokens}`);
       
-      // Token parameter: max_completion_tokens para novos, max_tokens para legados
-      const tokenParam = isNewModel ? { max_completion_tokens: maxTokens } : { max_tokens: maxTokens };
+      // Token parameter: max_completion_tokens para reasoning models, max_tokens para non-reasoning
+      const tokenParam = useCompletionTokens ? { max_completion_tokens: maxTokens } : { max_tokens: maxTokens };
       
       // Parâmetros extras (reasoning_effort / temperature)
       let extraParams: Record<string, any> = {};
@@ -670,7 +677,7 @@ ${userMessage.content}`;
         extraParams = { temperature: 0.3 };
       }
       
-      console.log(`[chat] 🧠 Modelo: ${agentModel} | isNewModel: ${isNewModel} | systemRole: ${systemRole}`);
+      console.log(`[chat] 🧠 Modelo: ${agentModel} | isReasoning: ${isReasoningModel} | systemRole: ${systemRole}`);
       console.log(`[chat] 📦 extraParams:`, extraParams);
       
       // TIMEOUT DINÂMICO baseado no tamanho do prompt
