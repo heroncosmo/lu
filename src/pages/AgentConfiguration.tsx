@@ -564,21 +564,23 @@ const AgentConfiguration = () => {
           content: m.content.length > 2000 ? m.content.slice(0, 2000) + '...' : m.content
         }));
 
-      // ARQUITETURA JSON SCHEMA: GPT retorna 2 coisas:
-      // 1. resposta_chat: Resposta conversacional para o usuário
-      // 2. documento_atualizado: O documento completo com as mudanças
+      // ARQUITETURA RÁPIDA: GPT retorna apenas as MUDANÇAS, não o documento completo!
+      // Isso reduz de 30-60s para 5-10s em prompts grandes
+      // 1. resposta_chat: Resposta conversacional
+      // 2. operacao: "nenhuma", "substituir_tudo" ou "substituir_secao"
+      // 3. conteudo_novo: Apenas se houver mudança (não o documento inteiro!)
       
       const systemPrompt = `Você é um assistente especializado em editar playbooks de vendas.
 
-Você conversa naturalmente com o usuário E faz as edições solicitadas no documento.
+Você conversa naturalmente com o usuário E identifica as edições necessárias.
 
 IMPORTANTE:
 - Seja conversacional e amigável na resposta do chat
 - Explique o que você fez ou vai fazer
-- Faça APENAS as mudanças solicitadas no documento
-- PRESERVE 100% do resto do documento (formatação, espaçamento, tudo)
-- Se for apenas uma pergunta (sem pedido de edição), responda normalmente e mantenha o documento igual
-- Se o usuário enviar uma IMAGEM, analise-a cuidadosamente e use as informações dela para calibrar/ajustar o documento conforme solicitado`;
+- Para PERGUNTAS sem pedido de edição: use operacao="nenhuma"
+- Para MUDANÇAS ESPECÍFICAS (ex: "deixe mais persuasivo"): use operacao="substituir_tudo" e retorne APENAS o novo documento completo
+- Para MUDANÇAS PEQUENAS (ex: "adicione uma frase"): use operacao="substituir_secao" com secao_antiga e secao_nova
+- NÃO retorne o documento se não houver mudanças!`;
 
       // Construir mensagem do usuário - com ou sem imagem
       let userMessageContent: any;
@@ -680,11 +682,11 @@ ${userMessage.content}`;
       console.log(`[chat] 🧠 Modelo: ${agentModel} | isReasoning: ${isReasoningModel} | systemRole: ${systemRole}`);
       console.log(`[chat] 📦 extraParams:`, extraParams);
       
-      // TIMEOUT DINÂMICO baseado no tamanho do prompt
-      // Prompts grandes precisam de mais tempo (GPT-4.1 com prompt grande pode demorar 2-3 min)
-      const baseTimeout = 60000; // 60 segundos base
-      const extraTimePerKChar = 8000; // +8 segundos por 1000 caracteres
-      const calculatedTimeout = Math.min(baseTimeout + (promptChars / 1000) * extraTimePerKChar, 300000); // Máx 5 minutos
+      // TIMEOUT REDUZIDO: nova arquitetura só retorna mudanças, não documento completo
+      // Isso permite timeouts muito menores mesmo para prompts grandes
+      const baseTimeout = 30000; // 30 segundos base
+      const extraTimePerKChar = 2000; // +2 segundos por 1000 caracteres (reduzido de 8s)
+      const calculatedTimeout = Math.min(baseTimeout + (promptChars / 1000) * extraTimePerKChar, 90000); // Máx 90 segundos
       
       console.log(`[chat] ⏱️ Timeout calculado: ${Math.round(calculatedTimeout/1000)}s para prompt de ${promptChars} chars`);
       
@@ -727,18 +729,23 @@ ${userMessage.content}`;
                 properties: {
                   resposta_chat: {
                     type: 'string',
-                    description: 'Resposta conversacional para o usuário. Seja amigável, explique o que fez ou responda a pergunta.'
+                    description: 'Resposta conversacional para o usuário. Seja amigável, explique o que fez.'
                   },
-                  documento_atualizado: {
+                  operacao: {
                     type: 'string',
-                    description: 'O documento COMPLETO. Se fez alteração, inclua a alteração. Se não fez, retorne o documento original sem mudanças.'
+                    enum: ['nenhuma', 'substituir_tudo', 'substituir_secao'],
+                    description: 'nenhuma=sem mudanças, substituir_tudo=retornar documento completo novo, substituir_secao=replace de uma seção'
                   },
-                  alteracao_feita: {
-                    type: 'boolean',
-                    description: 'true se alguma alteração foi feita no documento, false se manteve igual'
+                  conteudo_novo: {
+                    type: 'string',
+                    description: 'O novo documento completo (se substituir_tudo) OU a seção nova (se substituir_secao). Vazio se nenhuma.'
+                  },
+                  secao_antiga: {
+                    type: 'string',
+                    description: 'Texto exato a ser substituído (apenas se substituir_secao). Deve ser um trecho único e identificável do documento.'
                   }
                 },
-                required: ['resposta_chat', 'documento_atualizado', 'alteracao_feita'],
+                required: ['resposta_chat', 'operacao', 'conteudo_novo', 'secao_antiga'],
                 additionalProperties: false
               }
             }
@@ -769,42 +776,21 @@ ${userMessage.content}`;
       let warningMessage = '';
       
       try {
-        // Sanitizar a resposta para corrigir escapes Unicode mal formados
-        const sanitizedContent = responseContent
-          .replace(/\\u(?![0-9a-fA-F]{4})/g, '\\\\u') // Corrigir escapes Unicode incompletos
-          .replace(/[\u0000-\u001F\u007F-\u009F]/g, '') // Remover caracteres de controle
-          .replace(/\\/g, (match: string, offset: number, str: string) => {
-            // Verificar se é um escape válido de JSON
-            const nextChar = str[offset + 1];
-            if (nextChar && 'bfnrtu"\\'.includes(nextChar)) {
-              return match; // Manter escapes válidos
-            }
-            if (nextChar === 'u') {
-              // Verificar se é um escape Unicode válido (\uXXXX)
-              const hex = str.slice(offset + 2, offset + 6);
-              if (/^[0-9a-fA-F]{4}$/.test(hex)) {
-                return match; // Manter escapes Unicode válidos
-              }
-            }
-            return '\\\\'; // Escapar barras invertidas isoladas
-          });
-        
-        console.log('[chat] 🔧 Conteúdo sanitizado, tentando parse...');
-        const result = JSON.parse(sanitizedContent);
+        const result = JSON.parse(responseContent);
         console.log('[chat] ✅ JSON parseado com sucesso');
         console.log('[chat] 💬 Resposta chat:', result.resposta_chat?.substring(0, 100) + '...');
-        console.log('[chat] 🔄 Alteração feita:', result.alteracao_feita);
+        console.log('[chat] 🔄 Operação:', result.operacao);
         
         // Usar a resposta conversacional do GPT
         assistantContent = result.resposta_chat || 'Processado com sucesso.';
         
-        if (result.alteracao_feita && result.documento_atualizado) {
-          const updatedDoc = result.documento_atualizado;
+        // Processar baseado no tipo de operação
+        if (result.operacao === 'substituir_tudo' && result.conteudo_novo) {
+          // Substituir documento inteiro
+          const updatedDoc = result.conteudo_novo;
           const sizeDiff = updatedDoc.length - currentInstructions.length;
           
-          console.log('[chat] 📏 Tamanho original:', currentInstructions.length);
-          console.log('[chat] 📏 Tamanho novo:', updatedDoc.length);
-          console.log('[chat] 📏 Diferença:', sizeDiff, 'caracteres');
+          console.log('[chat] 📏 Substituir tudo - Original:', currentInstructions.length, '→ Novo:', updatedDoc.length);
           
           // Validação: alertar se removeu muito conteúdo
           const ratio = updatedDoc.length / currentInstructions.length;
@@ -814,15 +800,36 @@ ${userMessage.content}`;
           }
           
           proposedPrompt = updatedDoc;
+          assistantContent += `\n\n✅ **Alteração pronta!** (${sizeDiff > 0 ? '+' : ''}${sizeDiff} caracteres)\n_Clique em "Aplicar Alterações" para confirmar._`;
           
-          const diffText = sizeDiff > 0 
-            ? `(+${sizeDiff} caracteres)` 
-            : sizeDiff < 0 
-              ? `(${sizeDiff} caracteres)` 
-              : '(mesmo tamanho)';
+        } else if (result.operacao === 'substituir_secao' && result.secao_antiga && result.conteudo_novo) {
+          // Substituir apenas uma seção
+          const secaoAntiga = result.secao_antiga;
+          const secaoNova = result.conteudo_novo;
           
-          // Adicionar indicador de alteração pronta
-          assistantContent += `\n\n✅ **Alteração pronta!** ${diffText}\n_Clique em "Aplicar Alterações" para confirmar._`;
+          console.log('[chat] 🔄 Substituir seção');
+          console.log('[chat] 📍 Procurando:', secaoAntiga.substring(0, 100) + '...');
+          
+          if (currentInstructions.includes(secaoAntiga)) {
+            const updatedDoc = currentInstructions.replace(secaoAntiga, secaoNova);
+            const sizeDiff = updatedDoc.length - currentInstructions.length;
+            
+            console.log('[chat] ✅ Seção encontrada e substituída');
+            console.log('[chat] 📏 Diferença:', sizeDiff, 'caracteres');
+            
+            proposedPrompt = updatedDoc;
+            assistantContent += `\n\n✅ **Alteração pronta!** (${sizeDiff > 0 ? '+' : ''}${sizeDiff} caracteres)\n_Clique em "Aplicar Alterações" para confirmar._`;
+          } else {
+            console.log('[chat] ⚠️ Seção não encontrada exatamente, usando documento atualizado completo');
+            // Fallback: se não encontrou a seção, usar o conteudo_novo como documento completo
+            proposedPrompt = secaoNova;
+            assistantContent += `\n\n✅ **Alteração pronta!**\n_Clique em "Aplicar Alterações" para confirmar._`;
+            warningMessage = `\n\n⚠️ **NOTA**: A seção exata não foi encontrada. Revise a alteração antes de aplicar.`;
+          }
+          
+        } else if (result.operacao === 'nenhuma') {
+          // Apenas conversa, sem alterações
+          console.log('[chat] 💬 Apenas conversa, sem alterações no documento');
         }
         
       } catch (parseError) {
@@ -831,10 +838,8 @@ ${userMessage.content}`;
         
         // Fallback: tentar extrair a resposta manualmente
         try {
-          // Tentar encontrar o campo resposta_chat com regex
           const respostaChatMatch = responseContent.match(/"resposta_chat"\s*:\s*"((?:[^"\\]|\\.)*)"/s);
           if (respostaChatMatch && respostaChatMatch[1]) {
-            // Decodificar escapes básicos
             const extractedResponse = respostaChatMatch[1]
               .replace(/\\n/g, '\n')
               .replace(/\\"/g, '"')
