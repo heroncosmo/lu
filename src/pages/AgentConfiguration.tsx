@@ -564,23 +564,24 @@ const AgentConfiguration = () => {
           content: m.content.length > 2000 ? m.content.slice(0, 2000) + '...' : m.content
         }));
 
-      // ARQUITETURA RÁPIDA: GPT retorna apenas as MUDANÇAS, não o documento completo!
-      // Isso reduz de 30-60s para 5-10s em prompts grandes
-      // 1. resposta_chat: Resposta conversacional
-      // 2. operacao: "nenhuma", "substituir_tudo" ou "substituir_secao"
-      // 3. conteudo_novo: Apenas se houver mudança (não o documento inteiro!)
+      // ARQUITETURA ULTRA-RÁPIDA: GPT retorna INSTRUÇÕES, não reescreve documento!
+      // Usar search-and-replace é 10x mais rápido que reescrever tudo
+      // 1. resposta_chat: Explica o que vai fazer
+      // 2. operacao: "nenhuma" ou "editar"
+      // 3. edicoes: Array de {buscar: "texto exato", substituir: "novo texto"}
       
       const systemPrompt = `Você é um assistente especializado em editar playbooks de vendas.
 
-Você conversa naturalmente com o usuário E identifica as edições necessárias.
+CRÍTICO: NUNCA reescreva o documento inteiro! Use search-and-replace para ser RÁPIDO.
 
 IMPORTANTE:
 - Seja conversacional e amigável na resposta do chat
-- Explique o que você fez ou vai fazer
-- Para PERGUNTAS sem pedido de edição: use operacao="nenhuma"
-- Para MUDANÇAS ESPECÍFICAS (ex: "deixe mais persuasivo"): use operacao="substituir_tudo" e retorne APENAS o novo documento completo
-- Para MUDANÇAS PEQUENAS (ex: "adicione uma frase"): use operacao="substituir_secao" com secao_antiga e secao_nova
-- NÃO retorne o documento se não houver mudanças!`;
+- Para PERGUNTAS: use operacao="nenhuma"
+- Para EDIÇÕES: use operacao="editar" e forneça array de edicoes
+- Cada edição tem: "buscar" (texto EXATO do documento) e "substituir" (novo texto)
+- Exemplo: {"buscar": "tom profissional", "substituir": "tom persuasivo e agressivo"}
+- Use múltiplas edições pequenas ao invés de reescrever seções grandes
+- Identifique 2-5 trechos específicos para melhorar, não o documento todo!`;
 
       // Construir mensagem do usuário - com ou sem imagem
       let userMessageContent: any;
@@ -729,23 +730,34 @@ ${userMessage.content}`;
                 properties: {
                   resposta_chat: {
                     type: 'string',
-                    description: 'Resposta conversacional para o usuário. Seja amigável, explique o que fez.'
+                    description: 'Resposta conversacional para o usuário. Explique as mudanças que fará.'
                   },
                   operacao: {
                     type: 'string',
-                    enum: ['nenhuma', 'substituir_tudo', 'substituir_secao'],
-                    description: 'nenhuma=sem mudanças, substituir_tudo=retornar documento completo novo, substituir_secao=replace de uma seção'
+                    enum: ['nenhuma', 'editar'],
+                    description: 'nenhuma=sem mudanças, editar=aplicar edições via search-and-replace'
                   },
-                  conteudo_novo: {
-                    type: 'string',
-                    description: 'O novo documento completo (se substituir_tudo) OU a seção nova (se substituir_secao). Vazio se nenhuma.'
-                  },
-                  secao_antiga: {
-                    type: 'string',
-                    description: 'Texto exato a ser substituído (apenas se substituir_secao). Deve ser um trecho único e identificável do documento.'
+                  edicoes: {
+                    type: 'array',
+                    description: 'Array de edições (search-and-replace). Vazio se operacao=nenhuma.',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        buscar: {
+                          type: 'string',
+                          description: 'Texto EXATO do documento a ser substituído. Deve existir no documento.'
+                        },
+                        substituir: {
+                          type: 'string',
+                          description: 'Novo texto que substituirá o texto buscado.'
+                        }
+                      },
+                      required: ['buscar', 'substituir'],
+                      additionalProperties: false
+                    }
                   }
                 },
-                required: ['resposta_chat', 'operacao', 'conteudo_novo', 'secao_antiga'],
+                required: ['resposta_chat', 'operacao', 'edicoes'],
                 additionalProperties: false
               }
             }
@@ -785,46 +797,42 @@ ${userMessage.content}`;
         assistantContent = result.resposta_chat || 'Processado com sucesso.';
         
         // Processar baseado no tipo de operação
-        if (result.operacao === 'substituir_tudo' && result.conteudo_novo) {
-          // Substituir documento inteiro
-          const updatedDoc = result.conteudo_novo;
-          const sizeDiff = updatedDoc.length - currentInstructions.length;
+        if (result.operacao === 'editar' && result.edicoes && result.edicoes.length > 0) {
+          // Aplicar edições via search-and-replace
+          let updatedDoc = currentInstructions;
+          let totalChanges = 0;
+          let failedChanges = 0;
           
-          console.log('[chat] 📏 Substituir tudo - Original:', currentInstructions.length, '→ Novo:', updatedDoc.length);
+          console.log(`[chat] ✂️ Aplicando ${result.edicoes.length} edições...`);
           
-          // Validação: alertar se removeu muito conteúdo
-          const ratio = updatedDoc.length / currentInstructions.length;
-          if (ratio < 0.90) {
-            const charsLost = currentInstructions.length - updatedDoc.length;
-            warningMessage = `\n\n⚠️ **ATENÇÃO**: O documento ficou ${charsLost} caracteres menor (${((1-ratio)*100).toFixed(1)}% removido). Revise antes de aplicar.`;
+          for (const edicao of result.edicoes) {
+            const { buscar, substituir } = edicao;
+            
+            if (updatedDoc.includes(buscar)) {
+              updatedDoc = updatedDoc.replace(buscar, substituir);
+              totalChanges++;
+              console.log(`[chat] ✅ Edição ${totalChanges}: "${buscar.substring(0, 50)}..." → "${substituir.substring(0, 50)}..."`);
+            } else {
+              failedChanges++;
+              console.log(`[chat] ⚠️ Texto não encontrado: "${buscar.substring(0, 50)}..."`);
+            }
           }
           
-          proposedPrompt = updatedDoc;
-          assistantContent += `\n\n✅ **Alteração pronta!** (${sizeDiff > 0 ? '+' : ''}${sizeDiff} caracteres)\n_Clique em "Aplicar Alterações" para confirmar._`;
-          
-        } else if (result.operacao === 'substituir_secao' && result.secao_antiga && result.conteudo_novo) {
-          // Substituir apenas uma seção
-          const secaoAntiga = result.secao_antiga;
-          const secaoNova = result.conteudo_novo;
-          
-          console.log('[chat] 🔄 Substituir seção');
-          console.log('[chat] 📍 Procurando:', secaoAntiga.substring(0, 100) + '...');
-          
-          if (currentInstructions.includes(secaoAntiga)) {
-            const updatedDoc = currentInstructions.replace(secaoAntiga, secaoNova);
+          if (totalChanges > 0) {
             const sizeDiff = updatedDoc.length - currentInstructions.length;
             
-            console.log('[chat] ✅ Seção encontrada e substituída');
-            console.log('[chat] 📏 Diferença:', sizeDiff, 'caracteres');
+            console.log(`[chat] 📊 Resultado: ${totalChanges} edições aplicadas, ${failedChanges} falharam`);
+            console.log(`[chat] 📏 Diferença: ${sizeDiff > 0 ? '+' : ''}${sizeDiff} caracteres`);
             
             proposedPrompt = updatedDoc;
-            assistantContent += `\n\n✅ **Alteração pronta!** (${sizeDiff > 0 ? '+' : ''}${sizeDiff} caracteres)\n_Clique em "Aplicar Alterações" para confirmar._`;
+            assistantContent += `\n\n✅ **${totalChanges} alteração(ões) pronta(s)!** (${sizeDiff > 0 ? '+' : ''}${sizeDiff} caracteres)\n_Clique em "Aplicar Alterações" para confirmar._`;
+            
+            if (failedChanges > 0) {
+              warningMessage = `\n\n⚠️ **NOTA**: ${failedChanges} edição(ões) não foi(ram) encontrada(s) exatamente no texto.`;
+            }
           } else {
-            console.log('[chat] ⚠️ Seção não encontrada exatamente, usando documento atualizado completo');
-            // Fallback: se não encontrou a seção, usar o conteudo_novo como documento completo
-            proposedPrompt = secaoNova;
-            assistantContent += `\n\n✅ **Alteração pronta!**\n_Clique em "Aplicar Alterações" para confirmar._`;
-            warningMessage = `\n\n⚠️ **NOTA**: A seção exata não foi encontrada. Revise a alteração antes de aplicar.`;
+            assistantContent += `\n\n⚠️ Nenhuma edição pôde ser aplicada (textos não encontrados).`;
+            warningMessage = `\n\n💡 **DICA**: Tente descrever a mudança de forma mais específica, citando trechos exatos do documento.`;
           }
           
         } else if (result.operacao === 'nenhuma') {
