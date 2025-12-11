@@ -247,6 +247,10 @@ serve(async (req) => {
   }
 
   try {
+    // Variáveis para controle do batching V5 (declaradas no topo para estar disponíveis no catch)
+    let webhookId: string | undefined;
+    let session: { id: string } | null | undefined;
+    
     const supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
@@ -284,7 +288,7 @@ serve(async (req) => {
     // Buscar sessão ativa para este número PRIMEIRO (para obter a API key do agente)
     console.log("=== BUSCANDO SESSÃO ATIVA ===");
     console.log("Buscando sessão para o número:", clientNumber);
-    const { data: session, error: sessionError } = await supabaseAdmin
+    const { data: sessionData, error: sessionError } = await supabaseAdmin
       .from("prospecting_sessions")
       .select(`
         id, 
@@ -300,6 +304,9 @@ serve(async (req) => {
       .order("created_at", { ascending: false })
       .limit(1)
       .single();
+    
+    // Atribuir à variável do escopo superior (para estar disponível no catch)
+    session = sessionData;
 
     if (sessionError || !session) {
       console.warn(`Nenhuma sessão ativa encontrada para o número: ${clientNumber}`);
@@ -716,72 +723,48 @@ Responda APENAS com: oferta, quente, morno ou frio`;
       });
     }
 
-    // === MESSAGE BATCHING V4: SIMPLES E ROBUSTO ===
+    // === MESSAGE BATCHING V5: LOCK ATÔMICO NO BANCO ===
     // OBJETIVO: Quando cliente envia várias mensagens rápidas, consolidar tudo em UMA resposta
     //
-    // ESTRATÉGIA SIMPLIFICADA:
-    // 1. Esperar um tempo inicial (3s) para dar chance a outras mensagens chegarem
-    // 2. Verificar se esta é a ÚLTIMA mensagem do cliente (não há mais novas)
-    // 3. Se não for a última, encerrar - deixar a última processar tudo
-    // 4. Se for a última, aguardar estabilização (sem novas mensagens por 4s)
-    // 5. Então buscar TODAS as mensagens pendentes e gerar UMA resposta
+    // PROBLEMA DO V4: Race condition - múltiplos webhooks podiam passar pela verificação
+    // "sou o mais novo?" simultaneamente porque SELECT não é atômico.
     //
-    // CHAVE: Cada webhook verifica se é o "vencedor" antes de processar
+    // SOLUÇÃO V5: Usar UPDATE atômico com condição para adquirir lock exclusivo.
+    // Apenas o primeiro webhook que conseguir o UPDATE processa as mensagens.
+    //
+    // FLUXO:
+    // 1. Gerar webhookId único
+    // 2. Esperar tempo inicial (3s) para coletar mais mensagens
+    // 3. Verificar se é a mensagem mais recente (filtro rápido)
+    // 4. TENTAR ADQUIRIR LOCK ATÔMICO com UPDATE condicional
+    // 5. Se conseguir lock → processar todas as mensagens
+    // 6. Se não conseguir → encerrar silenciosamente
     
     const INITIAL_WAIT_MS = 3000; // Espera inicial de 3s
     const STABILITY_WAIT_MS = 4000; // Considerar estável após 4s sem novas mensagens
-    const MAX_TOTAL_WAIT_MS = 60000; // Máximo 60s total (para digitação longa)
+    const MAX_TOTAL_WAIT_MS = 60000; // Máximo 60s total
     const CHECK_INTERVAL_MS = 2000; // Verificar a cada 2s
+    const LOCK_DURATION_MS = 120000; // Lock expira em 2 minutos
     
-    console.log(`=== BATCHING V4: SIMPLES E ROBUSTO ===`);
-    console.log(`Esta mensagem: ID=${insertedClientMessage.id}, Timestamp=${insertedClientMessage.timestamp}`);
+    // Gerar ID único para este webhook (usando variável declarada no topo do try)
+    webhookId = crypto.randomUUID();
+    
+    console.log(`=== BATCHING V5: LOCK ATÔMICO ===`);
+    console.log(`WebhookID: ${webhookId}`);
+    console.log(`Mensagem: ID=${insertedClientMessage.id}, Timestamp=${insertedClientMessage.timestamp}`);
     
     // PASSO 1: Espera inicial para coletar mais mensagens
     console.log(`⏳ Aguardando ${INITIAL_WAIT_MS}ms para coletar mais mensagens...`);
     await new Promise(resolve => setTimeout(resolve, INITIAL_WAIT_MS));
     
-    // PASSO 2: Verificar se esta é a mensagem mais recente
-    // Se não for, encerrar - a mensagem mais recente vai processar tudo
-    const { data: latestMsg, error: latestMsgError } = await supabaseAdmin
-      .from("whatsapp_messages")
-      .select("id, timestamp")
-      .eq("session_id", session.id)
-      .eq("sender", "client")
-      .order("timestamp", { ascending: false })
-      .limit(1)
-      .single();
-    
-    if (latestMsgError) {
-      console.error("Erro ao verificar mensagem mais recente:", latestMsgError);
-      // Continuar mesmo assim por segurança
-    }
-    
-    if (latestMsg && latestMsg.id !== insertedClientMessage.id) {
-      // Não somos a mensagem mais recente - encerrar
-      console.log(`📭 Esta não é a mensagem mais recente. Encerrando.`);
-      console.log(`   Nossa: ${insertedClientMessage.id}`);
-      console.log(`   Mais recente: ${latestMsg.id}`);
-      return new Response(JSON.stringify({ 
-        success: true, 
-        clientMessageId: insertedClientMessage.id,
-        batched: true,
-        reason: "Webhook encerrou - mensagem mais nova vai processar o lote"
-      }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: 200,
-      });
-    }
-    
-    // PASSO 3: Somos a mensagem mais recente! Aguardar estabilização
-    // Esperar até que não chegue nenhuma mensagem nova por STABILITY_WAIT_MS
-    console.log(`✅ Esta é a mensagem mais recente. Aguardando estabilização...`);
+    // PASSO 2: Aguardar estabilização (sem novas mensagens por STABILITY_WAIT_MS)
+    console.log(`⏳ Aguardando estabilização (${STABILITY_WAIT_MS}ms sem novas mensagens)...`);
     
     let startTime = Date.now();
     let lastSeenMsgId = insertedClientMessage.id;
     let lastNewMsgTime = Date.now();
     
     while (Date.now() - startTime < MAX_TOTAL_WAIT_MS) {
-      // Verificar novamente a mensagem mais recente
       const { data: checkMsg } = await supabaseAdmin
         .from("whatsapp_messages")
         .select("id, timestamp")
@@ -792,65 +775,72 @@ Responda APENAS com: oferta, quente, morno ou frio`;
         .single();
       
       if (checkMsg && checkMsg.id !== lastSeenMsgId) {
-        // Nova mensagem chegou!
         console.log(`📨 Nova mensagem detectada: ${checkMsg.id}`);
-        
-        // Se a nova mensagem não é a nossa, encerrar - ela vai processar
-        if (checkMsg.id !== insertedClientMessage.id) {
-          console.log(`🚪 Encerrando - mensagem ${checkMsg.id} vai processar o lote`);
-          return new Response(JSON.stringify({ 
-            success: true, 
-            clientMessageId: insertedClientMessage.id,
-            batched: true,
-            reason: "Nova mensagem chegou - webhook encerrou"
-          }), {
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-            status: 200,
-          });
-        }
-        
         lastSeenMsgId = checkMsg.id;
         lastNewMsgTime = Date.now();
       }
       
-      // Verificar se estabilizou (sem novas mensagens pelo tempo necessário)
       if (Date.now() - lastNewMsgTime >= STABILITY_WAIT_MS) {
         console.log(`✅ Estabilizado! ${Math.round((Date.now() - lastNewMsgTime) / 1000)}s sem novas mensagens.`);
         break;
       }
       
-      // Aguardar antes de próxima verificação
       console.log(`⏳ Aguardando... (${Math.round((Date.now() - startTime) / 1000)}s total)`);
       await new Promise(resolve => setTimeout(resolve, CHECK_INTERVAL_MS));
     }
     
     const totalWaitTime = Date.now() - startTime + INITIAL_WAIT_MS;
-    console.log(`=== BATCHING CONCLUÍDO - TOTAL: ${Math.round(totalWaitTime / 1000)}s ===`);
+    console.log(`=== ESTABILIZAÇÃO CONCLUÍDA - TOTAL: ${Math.round(totalWaitTime / 1000)}s ===`);
 
-    // === VERIFICAÇÃO FINAL: Confirmar que ainda somos a mensagem mais recente ===
-    const { data: finalCheck } = await supabaseAdmin
-      .from("whatsapp_messages")
-      .select("id")
-      .eq("session_id", session.id)
-      .eq("sender", "client")
-      .order("timestamp", { ascending: false })
-      .limit(1)
+    // PASSO 3: TENTAR ADQUIRIR LOCK ATÔMICO
+    // Esta é a parte crítica - usar UPDATE com condição para garantir atomicidade
+    console.log(`🔒 Tentando adquirir lock atômico...`);
+    
+    const lockUntil = new Date(Date.now() + LOCK_DURATION_MS).toISOString();
+    
+    // UPDATE atômico: só consegue se não houver lock ativo (null ou expirado)
+    const { data: lockAcquired, error: lockError } = await supabaseAdmin
+      .from("prospecting_sessions")
+      .update({
+        batch_lock_id: webhookId,
+        batch_lock_until: lockUntil
+      })
+      .eq("id", session.id)
+      .or(`batch_lock_until.is.null,batch_lock_until.lt.${new Date().toISOString()}`)
+      .select("id, batch_lock_id")
       .single();
     
-    if (finalCheck && finalCheck.id !== insertedClientMessage.id) {
-      console.log(`🚫 Verificação final: não somos mais a mensagem mais recente. Encerrando.`);
+    if (lockError || !lockAcquired) {
+      // Não conseguimos o lock - outro webhook já tem
+      console.log(`❌ Lock não adquirido - outro webhook está processando`);
+      console.log(`   Erro: ${lockError?.message || 'Nenhuma linha afetada'}`);
       return new Response(JSON.stringify({ 
         success: true, 
         clientMessageId: insertedClientMessage.id,
         batched: true,
-        reason: "Outra mensagem chegou durante estabilização"
+        reason: "Outro webhook já está processando"
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 200,
       });
     }
     
-    console.log(`🎯 Confirmado: somos o webhook vencedor! Processando todas as mensagens...`);
+    // Verificar se realmente somos o dono do lock
+    if (lockAcquired.batch_lock_id !== webhookId) {
+      console.log(`❌ Lock pertence a outro webhook: ${lockAcquired.batch_lock_id}`);
+      return new Response(JSON.stringify({ 
+        success: true, 
+        clientMessageId: insertedClientMessage.id,
+        batched: true,
+        reason: "Lock pertence a outro webhook"
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 200,
+      });
+    }
+    
+    console.log(`🎯 LOCK ADQUIRIDO! WebhookID: ${webhookId}`);
+    console.log(`🎯 Somos o webhook vencedor! Processando todas as mensagens...`);
 
     // Chamar a função GPT para gerar resposta (texto, áudio transcrito e imagem)
     console.log("=== CHAMANDO FUNÇÃO GPT-AGENT ===");
@@ -863,21 +853,21 @@ Responda APENAS com: oferta, quente, morno ou frio`;
       gptAgentPayload.image_url = mediaBase64;
       console.log("📸 Enviando imagem para GPT Vision junto com a conversa");
     }
-    
-    let gptResponse;
-    let retryCount = 0;
-    const maxRetries = 3;
-    
-    while (retryCount < maxRetries) {
-      try {
-        gptResponse = await fetch(edgeFunctionUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!}`
-            },
-            body: JSON.stringify(gptAgentPayload)
-        });
+      
+      let gptResponse;
+      let retryCount = 0;
+      const maxRetries = 3;
+      
+      while (retryCount < maxRetries) {
+        try {
+          gptResponse = await fetch(edgeFunctionUrl, {
+              method: 'POST',
+              headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!}`
+              },
+              body: JSON.stringify(gptAgentPayload)
+          });
 
         console.log("=== RESPOSTA DA FUNÇÃO GPT-AGENT (TENTATIVA " + (retryCount + 1) + ") ===");
         console.log("Status da resposta:", gptResponse.status);
@@ -1014,6 +1004,20 @@ Responda APENAS com: oferta, quente, morno ou frio`;
     
     console.log("✅ Sessão atualizada - frontend receberá via postgres_changes");
 
+    // ==============================================
+    // LIBERAR O LOCK APÓS PROCESSAMENTO BEM SUCEDIDO
+    // ==============================================
+    console.log(`[BATCHING V5] Liberando lock para sessão ${session.id}...`);
+    await supabaseAdmin
+      .from("prospecting_sessions")
+      .update({
+        batch_lock_id: null,
+        batch_lock_until: null
+      })
+      .eq("id", session.id)
+      .eq("batch_lock_id", webhookId); // Só libera se ainda somos donos do lock
+    console.log(`[BATCHING V5] ✅ Lock liberado com sucesso`);
+
     console.log("=== FUNÇÃO CONCLUÍDA COM SUCESSO ===");
     return new Response(JSON.stringify({ 
       success: true, 
@@ -1028,6 +1032,26 @@ Responda APENAS com: oferta, quente, morno ou frio`;
 
   } catch (error) {
     console.error("=== ERRO NÃO TRATADO ===:", error);
+    
+    // Tentar liberar o lock em caso de erro (se tivermos um)
+    // @ts-ignore - webhookId e session podem não existir dependendo de onde o erro ocorreu
+    if (typeof webhookId !== 'undefined' && typeof session !== 'undefined' && session?.id) {
+      try {
+        console.log(`[BATCHING V5] Tentando liberar lock após erro para sessão ${session.id}...`);
+        await supabaseAdmin
+          .from("prospecting_sessions")
+          .update({
+            batch_lock_id: null,
+            batch_lock_until: null
+          })
+          .eq("id", session.id)
+          .eq("batch_lock_id", webhookId);
+        console.log(`[BATCHING V5] Lock liberado após erro`);
+      } catch (lockError) {
+        console.error(`[BATCHING V5] Erro ao liberar lock:`, lockError);
+      }
+    }
+    
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 500,
