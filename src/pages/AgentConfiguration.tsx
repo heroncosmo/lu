@@ -634,12 +634,14 @@ ${userMessage.content}`;
       
       // CÁLCULO DINÂMICO DE TOKENS BASEADO NO TAMANHO DO PROMPT
       // O schema pede o documento completo de volta, então precisamos de tokens suficientes
-      // Aproximação: 1 token ≈ 4 caracteres em português
+      // Aproximação: 1 token ≈ 3.5 caracteres em português (margem de segurança)
+      // A resposta JSON contém: documento_atualizado (~mesmo tamanho) + resposta_chat (~1000) + overhead JSON (~500)
       const promptChars = currentInstructions.length;
-      const estimatedTokensNeeded = Math.ceil(promptChars / 3.5); // Margem de segurança
-      const maxTokens = Math.min(Math.max(estimatedTokensNeeded + 2000, 4000), 32000); // Min 4k, max 32k
+      const estimatedDocTokens = Math.ceil(promptChars / 3); // Documento pode ficar maior
+      const responseOverhead = 2000; // Para resposta_chat + JSON overhead
+      const maxTokens = Math.min(Math.max(estimatedDocTokens + responseOverhead, 4000), 64000); // Min 4k, max 64k
       
-      console.log(`[chat] 📐 Prompt: ${promptChars} chars → estimativa: ${estimatedTokensNeeded} tokens → max: ${maxTokens}`);
+      console.log(`[chat] 📐 Prompt: ${promptChars} chars → doc: ~${estimatedDocTokens} tokens → max: ${maxTokens}`);
       
       // Token parameter: max_completion_tokens para novos, max_tokens para legados
       const tokenParam = isNewModel ? { max_completion_tokens: maxTokens } : { max_tokens: maxTokens };

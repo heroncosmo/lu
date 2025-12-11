@@ -264,12 +264,25 @@ Responda em português brasileiro.`;
       // GPT-5.1: usa role "developer" e max_completion_tokens
       // Com reasoning_effort: "none" para resposta rápida + temperature para criatividade
 
-      // Timeout de 30 segundos (suficiente para respostas normais)
+      // Timeout dinâmico baseado no tamanho do prompt (mínimo 30s, máximo 120s)
+      const promptSize = agent.instructions?.length || 0;
+      const calculatedTimeout = Math.min(Math.max(30000, promptSize * 5), 120000);
+      
+      console.log('[AssistentePrompts] ⏱️ Timeout:', Math.round(calculatedTimeout/1000), 's para prompt de', promptSize, 'chars');
+      
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000);
+      const timeoutId = setTimeout(() => controller.abort(), calculatedTimeout);
 
       try {
         console.log('[AssistentePrompts] 🚀 Chamando API OpenAI...');
+        
+        // Calcular tokens necessários baseado no tamanho do prompt atual
+        // O assistente pode propor um novo prompt completo, então precisa de espaço
+        const promptSize = agent.instructions?.length || 0;
+        const estimatedTokens = Math.ceil(promptSize / 3); // ~3 chars por token
+        const maxTokens = Math.min(Math.max(estimatedTokens + 1500, 2000), 16000); // Min 2k, max 16k
+        
+        console.log('[AssistentePrompts] 📐 Prompt atual:', promptSize, 'chars → max_tokens:', maxTokens);
         
         // Chamar GPT-5.1 via API (modelo fixo para o Assistente de Prompts)
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -286,7 +299,7 @@ Responda em português brasileiro.`;
               ...conversationMessages,
               { role: 'user', content: userMessage }
             ],
-            max_completion_tokens: 1000,
+            max_completion_tokens: maxTokens,
             reasoning_effort: 'none',
             temperature: 0.7
           })
