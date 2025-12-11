@@ -246,10 +246,11 @@ serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
+  // Variável para armazenar função de liberação de lock (definida durante o batching)
+  // Declarada fora do try para poder ser acessada no catch
+  let releaseLock: (() => Promise<void>) | null = null;
+
   try {
-    // Variável para armazenar função de liberação de lock (definida durante o batching)
-    let releaseLock: (() => Promise<void>) | null = null;
-    
     const supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
@@ -1150,7 +1151,7 @@ Responda APENAS com: oferta, quente, morno ou frio`;
     console.log("✅ Sessão atualizada - frontend receberá via postgres_changes");
 
     // Liberar o lock após processamento bem-sucedido
-    await releaseLock();
+    if (releaseLock) await releaseLock();
 
     console.log("=== FUNÇÃO CONCLUÍDA COM SUCESSO ===");
     return new Response(JSON.stringify({ 
