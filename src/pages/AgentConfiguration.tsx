@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { compareTwoStrings, findBestMatch } from 'string-similarity';
 
@@ -469,9 +470,9 @@ const AgentConfiguration = () => {
       setChatMessages([{
         id: 'welcome',
         role: 'assistant',
-        content: `Olá! 👋 Sou seu assistente para melhorar o prompt do agente "${form.getValues('name')}".
+        content: `Olá! 👋 Sou seu assistente de calbiramento para melhorar o seu agente ia "${form.getValues('name')}".
 
-**📊 Seu prompt tem ${sections.length} seções estruturadas.**
+**📊 Seu Agente tem ${sections.length} seções estruturadas.**
 
 ## Como funciona:
 1. 📝 Me diga o que quer melhorar (ex: "melhore a saudação", "adicione tratamento de objeções")
@@ -1042,7 +1043,7 @@ ${userMessage.content}`;
       // Detectar se foi timeout/abort
       const isTimeout = error.name === 'AbortError';
       const errorText = isTimeout 
-        ? 'A requisição demorou demais. Seu prompt é grande - isso pode levar até 3 minutos. Tente novamente.'
+        ? 'A requisição demorou demais. Seu Agente é grande - isso pode levar até 3 minutos. Tente novamente.'
         : error.message;
       
       const errorMessage: ChatMessage = {
@@ -1430,7 +1431,7 @@ ${successCount === totalTests ? '✅ Todas as edições preservaram o documento!
         <h1 className="text-3xl font-bold mb-6 text-center">Configuração do Agente de Prospecção</h1>
 
         {/* Layout de duas colunas quando editando */}
-        <div className={`grid gap-6 ${editingAgentId ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1 max-w-3xl mx-auto'}`}>
+        <div className={`grid gap-6 ${editingAgentId ? 'grid-cols-1 lg:grid-cols-[1.35fr_1fr]' : 'grid-cols-1 max-w-3xl mx-auto'}`}>
           
           {/* Coluna Esquerda - Formulário */}
           <div className="space-y-6">
@@ -1443,88 +1444,7 @@ ${successCount === totalTests ? '✅ Todas as edições preservaram o documento!
               </CardHeader>
               <CardContent>
                 <Form {...form}>
-                  <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                    <FormField
-                      control={form.control}
-                      name="name"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Nome do Agente</FormLabel>
-                          <FormControl>
-                            <Input placeholder="Agente de Vendas B2B" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    
-                    <FormField
-                      control={form.control}
-                      name="gpt_model"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Modelo GPT</FormLabel>
-                          <div className="flex gap-2">
-                            <Select onValueChange={field.onChange} value={field.value}>
-                              <FormControl>
-                                <SelectTrigger className="flex-1">
-                                  <SelectValue placeholder="Selecione o modelo GPT" />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                {GPT_MODELS.map((model) => (
-                                  <SelectItem 
-                                    key={model.value} 
-                                    value={model.value}
-                                    title={model.description}
-                                    className="cursor-pointer"
-                                  >
-                                    {model.label}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              disabled={isTestingModel || !form.getValues('gpt_api_key')}
-                              onClick={async () => {
-                                const apiKey = form.getValues('gpt_api_key');
-                                const model = field.value;
-                                if (!apiKey) {
-                                  toast.error('Configure a chave API primeiro');
-                                  return;
-                                }
-                                setIsTestingModel(true);
-                                setModelTestResult(null);
-                                const result = await testGPTModel(apiKey, model);
-                                setModelTestResult(result.message);
-                                setIsTestingModel(false);
-                                if (result.success) {
-                                  toast.success(result.message);
-                                } else {
-                                  toast.error(result.message);
-                                }
-                              }}
-                            >
-                              {isTestingModel ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                '🧪 Testar'
-                              )}
-                            </Button>
-                          </div>
-                          {modelTestResult && (
-                            <p className={`text-xs mt-1 ${modelTestResult.includes('✅') ? 'text-green-600' : 'text-red-600'}`}>
-                              {modelTestResult}
-                            </p>
-                          )}
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    
+                  <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
                     <FormField
                       control={form.control}
                       name="instructions"
@@ -1548,7 +1468,7 @@ ${successCount === totalTests ? '✅ Todas as edições preservaram o documento!
                           <FormControl>
                             <Textarea
                               placeholder="Você é um agente de vendas amigável e persuasivo. Seu objetivo é..."
-                              className="min-h-[200px] font-mono text-sm"
+                              className="min-h-[60vh] font-mono text-sm"
                               {...field}
                             />
                           </FormControl>
@@ -1609,63 +1529,161 @@ ${successCount === totalTests ? '✅ Todas as edições preservaram o documento!
                         </CardContent>
                       </Card>
                     )}
-                    
-                    <FormField
-                      control={form.control}
-                      name="gpt_api_key"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Chave da API GPT</FormLabel>
-                          <FormControl>
-                            <Input type="password" placeholder="sk-proj-..." {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
 
-                    <div className="grid grid-cols-2 gap-4">
-                      <FormField
-                        control={form.control}
-                        name="response_delay_seconds"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel className="flex items-center gap-1 text-xs">
-                              <Clock className="h-3 w-3" />
-                              Leitura (seg)
-                            </FormLabel>
-                            <FormControl>
-                              <Input 
-                                type="number" 
-                                {...field}
-                                onChange={(e) => field.onChange(Number(e.target.value))}
-                              />
-                            </FormControl>
-                          </FormItem>
-                        )}
-                      />
-                      
-                      <FormField
-                        control={form.control}
-                        name="word_delay_seconds"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel className="flex items-center gap-1 text-xs">
-                              <Zap className="h-3 w-3" />
-                              Por Palavra (seg)
-                            </FormLabel>
-                            <FormControl>
-                              <Input 
-                                type="number" 
-                                step="0.1"
-                                {...field}
-                                onChange={(e) => field.onChange(Number(e.target.value))}
-                              />
-                            </FormControl>
-                          </FormItem>
-                        )}
-                      />
-                    </div>
+                    <Tabs defaultValue="geral" className="w-full">
+                      <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4">
+                        <TabsTrigger value="geral">Geral</TabsTrigger>
+                        <TabsTrigger value="modelo">Modelo</TabsTrigger>
+                        <TabsTrigger value="chaves">Chaves</TabsTrigger>
+                        <TabsTrigger value="ritmo">Ritmo</TabsTrigger>
+                      </TabsList>
+
+                      <TabsContent value="geral" className="space-y-4">
+                        <FormField
+                          control={form.control}
+                          name="name"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Nome do Agente</FormLabel>
+                              <FormControl>
+                                <Input placeholder="Agente de Vendas B2B" {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </TabsContent>
+
+                      <TabsContent value="modelo" className="space-y-4">
+                        <FormField
+                          control={form.control}
+                          name="gpt_model"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Modelo GPT</FormLabel>
+                              <div className="flex gap-2">
+                                <Select onValueChange={field.onChange} value={field.value}>
+                                  <FormControl>
+                                    <SelectTrigger className="flex-1">
+                                      <SelectValue placeholder="Selecione o modelo GPT" />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    {GPT_MODELS.map((model) => (
+                                      <SelectItem
+                                        key={model.value}
+                                        value={model.value}
+                                        title={model.description}
+                                        className="cursor-pointer"
+                                      >
+                                        {model.label}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={isTestingModel || !form.getValues('gpt_api_key')}
+                                  onClick={async () => {
+                                    const apiKey = form.getValues('gpt_api_key');
+                                    const model = field.value;
+                                    if (!apiKey) {
+                                      toast.error('Configure a chave API primeiro');
+                                      return;
+                                    }
+                                    setIsTestingModel(true);
+                                    setModelTestResult(null);
+                                    const result = await testGPTModel(apiKey, model);
+                                    setModelTestResult(result.message);
+                                    setIsTestingModel(false);
+                                    if (result.success) {
+                                      toast.success(result.message);
+                                    } else {
+                                      toast.error(result.message);
+                                    }
+                                  }}
+                                >
+                                  {isTestingModel ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    '🧪 Testar'
+                                  )}
+                                </Button>
+                              </div>
+                              {modelTestResult && (
+                                <p className={`text-xs mt-1 ${modelTestResult.includes('✅') ? 'text-green-600' : 'text-red-600'}`}>
+                                  {modelTestResult}
+                                </p>
+                              )}
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </TabsContent>
+
+                      <TabsContent value="chaves" className="space-y-4">
+                        <FormField
+                          control={form.control}
+                          name="gpt_api_key"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Chave da API GPT</FormLabel>
+                              <FormControl>
+                                <Input type="password" placeholder="sk-proj-..." {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </TabsContent>
+
+                      <TabsContent value="ritmo" className="space-y-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <FormField
+                            control={form.control}
+                            name="response_delay_seconds"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel className="flex items-center gap-1 text-xs">
+                                  <Clock className="h-3 w-3" />
+                                  Leitura (seg)
+                                </FormLabel>
+                                <FormControl>
+                                  <Input
+                                    type="number"
+                                    {...field}
+                                    onChange={(e) => field.onChange(Number(e.target.value))}
+                                  />
+                                </FormControl>
+                              </FormItem>
+                            )}
+                          />
+
+                          <FormField
+                            control={form.control}
+                            name="word_delay_seconds"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel className="flex items-center gap-1 text-xs">
+                                  <Zap className="h-3 w-3" />
+                                  Por Palavra (seg)
+                                </FormLabel>
+                                <FormControl>
+                                  <Input
+                                    type="number"
+                                    step="0.1"
+                                    {...field}
+                                    onChange={(e) => field.onChange(Number(e.target.value))}
+                                  />
+                                </FormControl>
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+                      </TabsContent>
+                    </Tabs>
 
                     <div className="flex gap-2">
                       <Button type="submit" className="flex-1">
@@ -1739,7 +1757,7 @@ ${successCount === totalTests ? '✅ Todas as edições preservaram o documento!
                 <CardTitle className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Sparkles className="h-5 w-5 text-purple-500" />
-                    <span>Assistente de Prompts</span>
+                    <span>Calibramento de IA</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <Button

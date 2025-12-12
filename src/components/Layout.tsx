@@ -234,7 +234,7 @@ export default function Layout({ children }: LayoutProps) {
         <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200 dark:border-gray-700">
           {sidebarOpen && (
             <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-              CRM Pro
+              Luchoa IA
             </h1>
           )}
           <Button
@@ -341,7 +341,7 @@ export default function Layout({ children }: LayoutProps) {
           <aside className="fixed left-0 top-0 bottom-0 w-64 bg-white dark:bg-gray-800 shadow-xl">
             <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200 dark:border-gray-700">
               <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-                CRM Pro
+                Luchoa Ia - CRM
               </h1>
               <Button
                 variant="ghost"
