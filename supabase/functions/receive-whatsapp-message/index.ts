@@ -931,7 +931,7 @@ Responda APENAS com: oferta, quente, morno ou frio`;
       });
     }
     
-    const { reply: agentReply, delays } = gptData;
+    let { reply: agentReply, delays } = gptData;
     console.log("Resposta do GPT:", agentReply);
     console.log("Informações de delay:", delays);
     
@@ -955,6 +955,64 @@ Responda APENAS com: oferta, quente, morno ou frio`;
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 200,
       });
+    }
+
+    // === VERIFICAÇÃO FINAL: NOVAS MENSAGENS DURANTE PROCESSAMENTO GPT ===
+    // CRÍTICO: Antes de enviar ao cliente, verificar se chegaram novas mensagens
+    // enquanto o GPT estava processando. Se sim, REFAZER a resposta com contexto completo.
+    console.log("=== VERIFICAÇÃO FINAL: NOVAS MENSAGENS? ===");
+    const { data: newestMessage } = await supabaseAdmin
+      .from("whatsapp_messages")
+      .select("id, timestamp, message_content")
+      .eq("session_id", session.id)
+      .eq("sender", "client")
+      .order("timestamp", { ascending: false })
+      .limit(1)
+      .single();
+    
+    if (newestMessage && newestMessage.id !== lastSeenMsgId) {
+      console.log(`🔄 NOVA MENSAGEM DETECTADA durante processamento GPT!`);
+      console.log(`   Última mensagem vista antes do GPT: ${lastSeenMsgId}`);
+      console.log(`   Nova mensagem: ${newestMessage.id} - "${newestMessage.message_content}"`);
+      console.log(`   🔄 REFAZENDO resposta com contexto completo...`);
+      
+      // Preparar payload com mídia se disponível
+      const retryGptPayload: any = { session_id: session.id };
+      if (mediaBase64 && messageType === "image") {
+        retryGptPayload.image_url = mediaBase64;
+      }
+      
+      // Chamar GPT novamente com contexto atualizado
+      try {
+        const retryGptResponse = await fetch(edgeFunctionUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!}`
+          },
+          body: JSON.stringify(retryGptPayload)
+        });
+        
+        if (retryGptResponse.ok) {
+          const retryGptData = await retryGptResponse.json();
+          console.log(`✅ Resposta refeita com sucesso!`);
+          console.log(`   Nova resposta: ${retryGptData.reply?.substring(0, 100)}...`);
+          
+          // Atualizar variáveis com a nova resposta
+          if (retryGptData.reply) {
+            agentReply = retryGptData.reply;
+            delays = retryGptData.delays;
+            console.log(`🔄 Usando resposta atualizada que considera TODAS as mensagens`);
+          }
+        } else {
+          console.warn(`⚠️ Falha ao refazer resposta (status ${retryGptResponse.status}), usando resposta original`);
+        }
+      } catch (retryError) {
+        console.error(`⚠️ Erro ao refazer resposta:`, retryError);
+        console.log(`   Usando resposta original`);
+      }
+    } else {
+      console.log(`✅ Nenhuma mensagem nova - resposta GPT está atualizada`);
     }
 
     // BUSCAR INSTÂNCIA WHATSAPP CORRETA PARA MULTI-INSTANCE
