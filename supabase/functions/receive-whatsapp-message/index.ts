@@ -741,11 +741,13 @@ Responda APENAS com: oferta, quente, morno ou frio`;
     // 5. Se conseguir lock → processar todas as mensagens
     // 6. Se não conseguir → encerrar silenciosamente
     
-    const INITIAL_WAIT_MS = 3000; // Espera inicial de 3s
-    const STABILITY_WAIT_MS = 4000; // Considerar estável após 4s sem novas mensagens
-    const MAX_TOTAL_WAIT_MS = 60000; // Máximo 60s total
-    const CHECK_INTERVAL_MS = 2000; // Verificar a cada 2s
-    const LOCK_DURATION_MS = 120000; // Lock expira em 2 minutos
+    // V6: Aumentados os tempos para capturar pausas maiores do cliente
+    // Problema anterior: cliente fazia pausa de 14s entre mensagens e sistema considerava estável
+    const INITIAL_WAIT_MS = 5000; // Espera inicial de 5s para coletar mensagens rápidas
+    const STABILITY_WAIT_MS = 15000; // Considerar estável após 15s sem novas mensagens
+    const MAX_TOTAL_WAIT_MS = 90000; // Máximo 90s total (aumentado para acomodar o novo STABILITY_WAIT)
+    const CHECK_INTERVAL_MS = 3000; // Verificar a cada 3s
+    const LOCK_DURATION_MS = 180000; // Lock expira em 3 minutos (aumentado)
     
     // Gerar ID único para este webhook (usando variável declarada no topo do try)
     webhookId = crypto.randomUUID();
