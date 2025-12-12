@@ -1436,11 +1436,34 @@ ${successCount === totalTests ? '✅ Todas as edições preservaram o documento!
           {/* Coluna Esquerda - Formulário */}
           <div className="space-y-6">
             <Card>
-              <CardHeader className="pb-4">
-                <CardTitle className="flex items-center gap-2">
-                  <Bot className="h-5 w-5" />
-                  {editingAgentId ? "Editar Agente" : "Criar Novo Agente"}
-                </CardTitle>
+              <CardHeader className={`pb-4 ${editingAgentId ? 'sticky top-4 z-30 bg-card/60 backdrop-blur' : ''}`}>
+                <div className="flex items-center justify-between w-full">
+                  <CardTitle className="flex items-center gap-2">
+                    <Bot className="h-5 w-5" />
+                    {editingAgentId ? "Editar Agente" : "Criar Novo Agente"}
+                  </CardTitle>
+
+                  {editingAgentId && (
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        onClick={() => form.handleSubmit(onSubmit)()}
+                        className="bg-primary text-primary-foreground"
+                      >
+                        Salvar Alterações
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        onClick={resetToDefaults}
+                        title="Resetar para padrões"
+                      >
+                        <RotateCcw className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
               </CardHeader>
               <CardContent>
                 <Form {...form}>
