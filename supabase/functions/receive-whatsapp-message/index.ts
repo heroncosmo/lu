@@ -478,6 +478,8 @@ serve(async (req) => {
         session_id: session.id, 
         sender: "client", 
         message_content: clientMessage,
+        // Ensure consistent ordering even during message bursts
+        timestamp: new Date().toISOString(),
         external_message_id: messageId || null  // Para deduplicação
       })
       .select()
@@ -774,6 +776,7 @@ Responda APENAS com: oferta, quente, morno ou frio`;
         .eq("session_id", session.id)
         .eq("sender", "client")
         .order("timestamp", { ascending: false })
+        .order("id", { ascending: false })
         .limit(1)
         .single();
       
@@ -967,12 +970,14 @@ Responda APENAS com: oferta, quente, morno ou frio`;
       .eq("session_id", session.id)
       .eq("sender", "client")
       .order("timestamp", { ascending: false })
+      .order("id", { ascending: false })
       .limit(1)
       .single();
-    
-    if (newestMessage && newestMessage.id !== lastSeenMsgId) {
+
+    const gptLastClientMessageId = gptData?.context?.lastClientMessageId ?? lastSeenMsgId;
+    if (newestMessage && newestMessage.id !== gptLastClientMessageId) {
       console.log(`🔄 NOVA MENSAGEM DETECTADA durante processamento GPT!`);
-      console.log(`   Última mensagem vista antes do GPT: ${lastSeenMsgId}`);
+      console.log(`   Última mensagem usada pelo GPT: ${gptLastClientMessageId}`);
       console.log(`   Nova mensagem: ${newestMessage.id} - "${newestMessage.message_content}"`);
       console.log(`   🔄 REFAZENDO resposta com contexto completo...`);
       

@@ -23,6 +23,48 @@ interface OpenAIMessage {
 // Função para simular delay
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+function getLastClientMessageId(messages: any[]): string | null {
+  const lastClient = [...messages].reverse().find((m) => m.sender === "client");
+  return lastClient?.id ?? null;
+}
+
+function buildFormattedHistory(messages: any[], image_url?: string): any[] {
+  const out: any[] = [];
+
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    const isLastMessage = i === messages.length - 1;
+    const isUserMessage = msg.sender !== "agent";
+
+    // Se é a última mensagem do usuário e temos uma imagem, usar formato Vision
+    if (isLastMessage && isUserMessage && image_url) {
+      console.log("📸 Adicionando imagem à última mensagem do usuário (Vision mode)");
+      out.push({
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: msg.message_content,
+          },
+          {
+            type: "image_url",
+            image_url: { url: image_url },
+          },
+        ],
+      });
+      continue;
+    }
+
+    // Mensagem normal (texto)
+    out.push({
+      role: isUserMessage ? "user" : "assistant",
+      content: msg.message_content,
+    });
+  }
+
+  return out;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -95,9 +137,9 @@ serve(async (req) => {
 
     // Buscar histórico completo da conversa
     console.log("Buscando histórico de mensagens...");
-    const { data: messages, error: messagesError } = await supabaseAdmin
+    const { data: initialMessages, error: messagesError } = await supabaseAdmin
       .from("whatsapp_messages")
-      .select("sender, message_content, timestamp")
+      .select("id, sender, message_content, timestamp")
       .eq("session_id", session_id)
       .order("timestamp", { ascending: true });
 
@@ -106,8 +148,10 @@ serve(async (req) => {
       throw new Error(`Falha ao buscar mensagens: ${messagesError.message}`);
     }
 
+    let messages = initialMessages || [];
+
     console.log("=== HISTÓRICO DE MENSAGENS ===");
-    console.log("Número de mensagens:", messages?.length || 0);
+    console.log("Número de mensagens:", messages.length);
     console.log("Mensagens:", JSON.stringify(messages, null, 2));
 
     // === BUSCAR ANOTAÇÕES DO CLIENTE PARA CONTEXTO DA IA ===
@@ -279,41 +323,13 @@ Que bom ouvir isso, Rodrigo! Tudo tranquilo por aqui também, graças a Deus. Co
     // Role: developer para modelos novos, system para legados
     const systemRole = isNewModel ? "developer" : "system";
 
+    let lastClientMessageId = getLastClientMessageId(messages);
+
     // Construir o histórico da conversa para o GPT
-    const formattedMessages: any[] = [
+    let formattedMessages: any[] = [
       { role: systemRole, content: systemPrompt },
+      ...buildFormattedHistory(messages, image_url),
     ];
-    
-    // Adicionar mensagens do histórico
-    for (let i = 0; i < messages.length; i++) {
-      const msg = messages[i];
-      const isLastMessage = i === messages.length - 1;
-      const isUserMessage = msg.sender !== "agent";
-      
-      // Se é a última mensagem do usuário e temos uma imagem, usar formato Vision
-      if (isLastMessage && isUserMessage && image_url) {
-        console.log("📸 Adicionando imagem à última mensagem do usuário (Vision mode)");
-        formattedMessages.push({
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: msg.message_content
-            },
-            {
-              type: "image_url",
-              image_url: { url: image_url }
-            }
-          ]
-        });
-      } else {
-        // Mensagem normal (texto)
-        formattedMessages.push({
-          role: isUserMessage ? "user" : "assistant",
-          content: msg.message_content,
-        });
-      }
-    }
 
     console.log("=== MENSAGENS FORMATADAS PARA O GPT ===");
     console.log("Número de mensagens formatadas:", formattedMessages.length);
@@ -331,6 +347,37 @@ Que bom ouvir isso, Rodrigo! Tudo tranquilo por aqui também, graças a Deus. Co
     console.log(`=== SIMULANDO TEMPO DE LEITURA (${responseDelay}s) ===`);
     await delay(responseDelay * 1000);
     console.log(`✅ Delay de leitura concluído`);
+
+    // Rebuscar histórico após o delay para evitar responder sem as últimas mensagens
+    // que podem chegar durante o "tempo de leitura".
+    console.log("=== REBUSCANDO HISTÓRICO APÓS DELAY ===");
+    const { data: messagesAfterDelay, error: messagesAfterDelayError } = await supabaseAdmin
+      .from("whatsapp_messages")
+      .select("id, sender, message_content, timestamp")
+      .eq("session_id", session_id)
+      .order("timestamp", { ascending: true });
+
+    if (messagesAfterDelayError) {
+      console.warn("⚠️ Falha ao rebuscar mensagens após delay (seguindo com histórico inicial):", messagesAfterDelayError);
+    } else if (messagesAfterDelay) {
+      const lastClientAfterDelay = getLastClientMessageId(messagesAfterDelay);
+      const changed = messagesAfterDelay.length !== messages.length || lastClientAfterDelay !== lastClientMessageId;
+
+      if (changed) {
+        console.log("🔄 Histórico atualizado após delay. Reformatando mensagens...");
+        console.log("Mensagens antes:", messages.length, "| depois:", messagesAfterDelay.length);
+        console.log("Última msg client antes:", lastClientMessageId, "| depois:", lastClientAfterDelay);
+
+        messages = messagesAfterDelay;
+        lastClientMessageId = lastClientAfterDelay;
+        formattedMessages = [
+          { role: systemRole, content: systemPrompt },
+          ...buildFormattedHistory(messages, image_url),
+        ];
+      } else {
+        console.log("✅ Nenhuma mudança no histórico após delay");
+      }
+    }
 
     console.log("=== CHAMANDO API DA OPENAI ===");
     
@@ -599,6 +646,10 @@ Retorne APENAS o JSON, sem explicações.`;
     const responseData = {
       reply: gptMessage, 
       gptModel,
+      context: {
+        messageCount: messages.length,
+        lastClientMessageId,
+      },
       delays: {
         responseDelay,
         wordDelay,
