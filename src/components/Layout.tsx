@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { useSession, UserPermissions } from '@/integrations/supabase/SessionContextProvider';
+import { useLayoutOptional } from '@/contexts/LayoutContext';
 import { toast } from 'sonner';
 import {
   LayoutDashboard,
@@ -191,11 +192,29 @@ const ALL_NAV_SECTIONS: NavSection[] = [
 ];
 
 export default function Layout({ children }: LayoutProps) {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const layoutContext = useLayoutOptional();
+  const [localSidebarOpen, setLocalSidebarOpen] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
   const { userProfile, isAdmin, hasPermission } = useSession();
+  
+  // Sincronizar com contexto se disponível
+  const sidebarOpen = layoutContext ? !layoutContext.sidebarCollapsed : localSidebarOpen;
+  const setSidebarOpen = (open: boolean) => {
+    if (layoutContext) {
+      layoutContext.setSidebarCollapsed(!open);
+    } else {
+      setLocalSidebarOpen(open);
+    }
+  };
+  
+  // Sincronizar estado local com contexto
+  useEffect(() => {
+    if (layoutContext) {
+      setLocalSidebarOpen(!layoutContext.sidebarCollapsed);
+    }
+  }, [layoutContext?.sidebarCollapsed]);
   
   // Filtrar seções e itens baseado nas permissões do usuário
   const navSections = ALL_NAV_SECTIONS.map(section => ({

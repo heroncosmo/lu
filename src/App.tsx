@@ -3,6 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { LayoutProvider } from "./contexts/LayoutContext";
 import Layout from "./components/Layout";
 import Dashboard from "./pages/Dashboard";
 import NotFound from "./pages/NotFound";
@@ -36,14 +37,15 @@ const queryClient = new QueryClient();
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-        <SessionContextProvider>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route element={<ProtectedRoute />}>
-              <Route element={<Layout><Dashboard /></Layout>} path="/" />
+      <LayoutProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+          <SessionContextProvider>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route element={<ProtectedRoute />}>
+                <Route element={<Layout><Dashboard /></Layout>} path="/" />
               <Route element={<Layout><CRMContacts /></Layout>} path="/crm-contacts" />
               <Route element={<Layout><ContactLists /></Layout>} path="/contact-lists" />
               <Route element={<Layout><CRMChat /></Layout>} path="/crm-chat" />
@@ -70,6 +72,7 @@ const App = () => (
           </Routes>
         </SessionContextProvider>
       </BrowserRouter>
+      </LayoutProvider>
     </TooltipProvider>
   </QueryClientProvider>
 );

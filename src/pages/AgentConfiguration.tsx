@@ -13,13 +13,14 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { compareTwoStrings, findBestMatch } from 'string-similarity';
+import { useLayout } from '@/contexts/LayoutContext';
+import { compareTwoStrings } from 'string-similarity';
 
 import { toast } from 'sonner';
 import { 
   Trash2, Edit, Bot, RotateCcw, Clock, Zap, 
   Send, Sparkles, History, Loader2, MessageSquare,
-  Check, ImagePlus, X
+  Check, ImagePlus, X, Save, ArrowLeft, Settings2
 } from 'lucide-react';
 import BackToHomeButton from '@/components/BackToHomeButton';
 
@@ -421,6 +422,7 @@ const applyFuzzyEdit = (
 };
 
 const AgentConfiguration = () => {
+  const layoutContext = useLayout();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<DeleteConfirm>({ open: false, agentId: null, agentName: '' });
@@ -437,6 +439,7 @@ const AgentConfiguration = () => {
   const [modelTestResult, setModelTestResult] = useState<string | null>(null);
   const [isPreservationTesting, setIsPreservationTesting] = useState(false);
   const [preservationTestResults, setPreservationTestResults] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<string>('prompt'); // Aba ativa controlada
   
   const chatEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1414,6 +1417,8 @@ ${successCount === totalTests ? '✅ Todas as edições preservaram o documento!
     setEditingAgentId(null);
     setChatMessages([]);
     setPromptVersions([]);
+    // Restaurar sidebar ao sair da edição
+    layoutContext.setSidebarCollapsed(false);
     form.reset({
       name: "",
       instructions: "",
@@ -1424,616 +1429,764 @@ ${successCount === totalTests ? '✅ Todas as edições preservaram o documento!
     });
   };
 
-  // Quando em modo edição, renderizar layout fullscreen tipo ChatGPT
+  // Recolher sidebar automaticamente ao entrar no modo de edição
+  useEffect(() => {
+    if (editingAgentId) {
+      layoutContext.setSidebarCollapsed(true);
+    }
+  }, [editingAgentId]);
+
+  // ===========================================
+  // MODO CANVAS (EDIÇÃO) - Layout estilo ChatGPT
+  // ===========================================
   if (editingAgentId) {
+    const currentAgent = agents.find(a => a.id === editingAgentId);
+    
     return (
-      <div className="fixed inset-0 flex h-screen w-screen bg-gray-50 dark:bg-gray-950 overflow-hidden">
-        {/* Coluna Esquerda - Chat Calibrador */}
-        <div className="flex flex-col w-full lg:w-80 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800">
-          {/* Header Chat */}
-          <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200 dark:border-gray-800 shrink-0">
-            <div className="flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-purple-500" />
-              <span className="font-semibold text-sm">Calibramento</span>
-            </div>
-            <Badge variant="outline" className="text-xs">
-              <MessageSquare className="h-3 w-3 mr-1" />
-              {chatMessages.filter(m => m.role === 'user').length}
-            </Badge>
-          </div>
-
-          {/* Chat Messages */}
-          <ScrollArea className="flex-1 p-4">
-            <div className="space-y-4">
-              {chatMessages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div
-                    className={`max-w-[85%] rounded-lg p-3 text-sm ${
-                      message.role === 'user'
-                        ? 'bg-blue-500 text-white'
-                        : message.role === 'system'
-                        ? 'bg-gray-100 dark:bg-gray-800 text-xs text-gray-600 dark:text-gray-400'
-                        : 'bg-gray-100 dark:bg-gray-800'
-                    }`}
-                  >
-                    {message.imageUrl && (
-                      <div className="mb-2">
-                        <img 
-                          src={message.imageUrl} 
-                          alt="Imagem enviada" 
-                          className="max-h-32 w-auto rounded"
-                        />
-                      </div>
-                    )}
-                    
-                    <div className="whitespace-pre-wrap">
-                      {message.content.split('```').map((part, i) => {
-                        if (i % 2 === 1) {
-                          const lines = part.split('\n');
-                          const code = lines.slice(1).join('\n');
-                          return (
-                            <pre key={i} className="bg-gray-900 text-gray-100 p-2 rounded my-1 overflow-x-auto text-xs">
-                              <code>{code || part}</code>
-                            </pre>
-                          );
-                        }
-                        return <span key={i}>{part}</span>;
-                      })}
-                    </div>
-                    
-                    {message.proposedPrompt && (
-                      <div className="mt-2 pt-2 border-t border-green-400/50 bg-green-50 dark:bg-green-950/30 -mx-3 -mb-3 p-2 rounded-b">
-                        <div className="flex items-center gap-1 mb-1">
-                          <Check className="h-3 w-3 text-green-600 dark:text-green-400" />
-                          <span className="text-xs font-medium text-green-700 dark:text-green-400">
-                            Pronto!
-                          </span>
-                        </div>
-                        <div className="flex gap-1">
-                          <Button
-                            size="sm"
-                            onClick={() => applyProposedPrompt(message.proposedPrompt!, message.id)}
-                            className="flex-1 h-7 text-xs bg-green-600 hover:bg-green-700"
-                          >
-                            <Check className="h-2 w-2 mr-1" />
-                            Aplicar
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setChatMessages(prev => prev.map(msg => 
-                                msg.id === message.id 
-                                  ? { ...msg, proposedPrompt: undefined }
-                                  : msg
-                              ));
-                            }}
-                            className="h-7 text-xs"
-                          >
-                            ✕
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                    
-                    <p className="text-[10px] opacity-50 mt-1">
-                      {message.timestamp.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                    </p>
-                  </div>
-                </div>
-              ))}
-              
-              {isAiLoading && (
-                <div className="flex justify-start">
-                  <div className="bg-gray-100 dark:bg-gray-800 rounded-lg p-3">
-                    <div className="flex items-center gap-2 text-sm">
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                      <span>Analisando...</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-              
-              <div ref={chatEndRef} />
-            </div>
-          </ScrollArea>
-
-          {/* Preservation Test Results */}
-          {preservationTestResults && (
-            <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-800 bg-blue-50 dark:bg-blue-950/30 shrink-0">
-              <div className="flex items-start gap-2">
-                <RotateCcw className="h-4 w-4 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
-                <p className="text-xs whitespace-pre-wrap text-gray-700 dark:text-gray-300">
-                  {preservationTestResults}
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Chat Input */}
-          <div className="p-4 border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shrink-0 space-y-2">
-            {chatImage && (
-              <div className="relative inline-block">
-                <img 
-                  src={chatImage} 
-                  alt="Imagem" 
-                  className="h-16 w-auto rounded border border-gray-200 dark:border-gray-700"
-                />
-                <Button
-                  variant="destructive"
-                  size="icon"
-                  className="absolute -top-2 -right-2 h-5 w-5 rounded-full"
-                  onClick={() => setChatImage(null)}
-                >
-                  <X className="h-2 w-2" />
-                </Button>
-              </div>
-            )}
-            
-            <div className="flex gap-2">
-              <input
-                type="file"
-                ref={fileInputRef}
-                onChange={handleImageSelect}
-                accept="image/*"
-                className="hidden"
-              />
-              
+      <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-900 overflow-hidden">
+        {/* Header Fixo com Abas e Botões */}
+        <div className="shrink-0 border-b bg-white dark:bg-gray-800 px-4 py-2">
+          <div className="flex items-center justify-between gap-4">
+            {/* Esquerda: Voltar + Nome do Agente */}
+            <div className="flex items-center gap-3 min-w-0">
               <Button
-                variant="outline"
-                size="icon"
-                className="h-9 w-9 shrink-0"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isAiLoading || !form.getValues('gpt_api_key')}
-                title="Anexar imagem"
+                variant="ghost"
+                size="sm"
+                onClick={cancelEdit}
+                className="shrink-0"
               >
-                <ImagePlus className="h-4 w-4" />
+                <ArrowLeft className="h-4 w-4 mr-1" />
+                Voltar
               </Button>
-              
-              <Input
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                placeholder="Melhorar prompt..."
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    sendChatMessage();
-                  }
-                }}
-                onPaste={handlePaste}
-                disabled={isAiLoading || !form.getValues('gpt_api_key')}
-                className="h-9 text-sm"
-              />
-              <Button 
-                onClick={sendChatMessage} 
-                disabled={isAiLoading || (!chatInput.trim() && !chatImage) || !form.getValues('gpt_api_key')}
-                size="icon"
-                className="h-9 w-9 shrink-0"
-              >
-                {isAiLoading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Send className="h-4 w-4" />
-                )}
-              </Button>
+              <div className="flex items-center gap-2 min-w-0">
+                <Bot className="h-5 w-5 text-primary shrink-0" />
+                <span className="font-semibold truncate">{currentAgent?.name || 'Agente'}</span>
+                <Badge variant="secondary" className="text-xs shrink-0">
+                  {form.watch('gpt_model')}
+                </Badge>
+              </div>
             </div>
-
-            {!form.getValues('gpt_api_key') && (
-              <p className="text-xs text-red-500 text-center">
-                ⚠️ Configure a chave API
-              </p>
-            )}
-          </div>
-        </div>
-
-        {/* Coluna Direita - Canvas do Prompt */}
-        <div className="flex flex-col flex-1 overflow-hidden">
-          {/* Top Bar - Botões e Tabs */}
-          <div className="h-16 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 px-6 flex items-center justify-between shrink-0">
-            <div className="flex items-center gap-4 flex-1">
-              <h2 className="font-semibold text-sm text-gray-700 dark:text-gray-300">
-                Editar: <span className="text-blue-600 dark:text-blue-400">{agents.find(a => a.id === editingAgentId)?.name || 'Agente'}</span>
-              </h2>
+            
+            {/* Centro: Abas de Configuração */}
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 max-w-xl">
+              <TabsList className="grid w-full grid-cols-4 h-9">
+                <TabsTrigger value="prompt" className="text-xs">
+                  <Bot className="h-3 w-3 mr-1" />
+                  Prompt
+                </TabsTrigger>
+                <TabsTrigger value="modelo" className="text-xs">
+                  <Settings2 className="h-3 w-3 mr-1" />
+                  Modelo
+                </TabsTrigger>
+                <TabsTrigger value="chaves" className="text-xs">
+                  🔑 Chaves
+                </TabsTrigger>
+                <TabsTrigger value="ritmo" className="text-xs">
+                  <Clock className="h-3 w-3 mr-1" />
+                  Ritmo
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+            
+            {/* Direita: Botões de Ação */}
+            <div className="flex items-center gap-2 shrink-0">
               {promptVersions.length > 0 && (
                 <Button 
                   type="button" 
                   variant="ghost" 
                   size="sm"
                   onClick={() => setShowVersions(!showVersions)}
-                  className="text-xs h-8"
+                  className="text-xs"
                 >
                   <History className="h-3 w-3 mr-1" />
-                  {promptVersions.length}v
+                  {promptVersions.length}
                 </Button>
               )}
-            </div>
-
-            <div className="flex items-center gap-2">
               <Button
-                type="button"
-                variant="outline"
+                onClick={form.handleSubmit(onSubmit)}
                 size="sm"
-                disabled={isPreservationTesting || !form.getValues('gpt_api_key') || form.getValues('instructions').length < 100}
-                onClick={runPreservationTest}
-                className="text-xs h-9"
+                className="bg-green-600 hover:bg-green-700"
               >
-                {isPreservationTesting ? (
-                  <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                ) : (
-                  <span>🧪</span>
-                )}
-                {isPreservationTesting ? 'Teste' : 'Testar'}
-              </Button>
-
-              <Button
-                type="button"
-                size="sm"
-                onClick={() => form.handleSubmit(onSubmit)()}
-                className="h-9 gap-2 bg-green-600 hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-600"
-              >
-                <Check className="h-4 w-4" />
+                <Save className="h-4 w-4 mr-1" />
                 Salvar
-              </Button>
-
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                onClick={resetToDefaults}
-                className="h-9 w-9 shrink-0"
-                title="Restaurar padrão"
-              >
-                <RotateCcw className="h-4 w-4" />
-              </Button>
-
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                onClick={cancelEdit}
-                className="h-9 w-9 shrink-0"
-                title="Fechar"
-              >
-                <X className="h-4 w-4" />
               </Button>
             </div>
           </div>
+        </div>
 
-          {/* Canvas Area - Textarea gigante */}
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="flex-1 flex flex-col overflow-hidden p-6">
-              <FormField
-                control={form.control}
-                name="instructions"
-                render={({ field }) => (
-                  <div className="flex-1 flex flex-col">
-                    <Textarea
-                      placeholder="Você é um agente de vendas amigável e persuasivo. Seu objetivo é..."
-                      className="flex-1 resize-none border-none bg-white dark:bg-gray-900 p-6 rounded-lg font-mono text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
-                      {...field}
-                    />
+        {/* Layout Principal: Chat (Esquerda) + Canvas (Direita) */}
+        <div className="flex-1 flex overflow-hidden">
+          
+          {/* ===== COLUNA ESQUERDA: Chat de Calibramento ===== */}
+          <div className="w-80 lg:w-96 shrink-0 border-r bg-white dark:bg-gray-800 flex flex-col">
+            {/* Header do Chat */}
+            <div className="p-3 border-b shrink-0">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-purple-500" />
+                  <span className="font-medium text-sm">Calibramento IA</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isPreservationTesting || !form.getValues('gpt_api_key') || form.getValues('instructions').length < 100}
+                    onClick={runPreservationTest}
+                    className="text-xs h-7 px-2"
+                  >
+                    {isPreservationTesting ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      '🧪'
+                    )}
+                  </Button>
+                  <Badge variant="outline" className="text-xs">
+                    <MessageSquare className="h-3 w-3 mr-1" />
+                    {chatMessages.filter(m => m.role === 'user').length}
+                  </Badge>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Converse para melhorar o prompt
+              </p>
+              {preservationTestResults && (
+                <div className="mt-2 p-2 bg-muted rounded text-xs whitespace-pre-wrap max-h-20 overflow-auto">
+                  {preservationTestResults}
+                </div>
+              )}
+            </div>
+            
+            {/* Mensagens do Chat */}
+            <ScrollArea className="flex-1">
+              <div className="p-3 space-y-3">
+                {chatMessages.map((message) => (
+                  <div
+                    key={message.id}
+                    className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                  >
+                    <div
+                      className={`max-w-[90%] rounded-lg p-2 text-sm ${
+                        message.role === 'user'
+                          ? 'bg-primary text-primary-foreground'
+                          : message.role === 'system'
+                          ? 'bg-muted text-muted-foreground'
+                          : 'bg-accent'
+                      }`}
+                    >
+                      {message.imageUrl && (
+                        <img 
+                          src={message.imageUrl} 
+                          alt="Imagem" 
+                          className="max-h-32 w-auto rounded mb-2"
+                        />
+                      )}
+                      
+                      <div className="whitespace-pre-wrap text-xs">
+                        {message.content.split('```').map((part, i) => {
+                          if (i % 2 === 1) {
+                            const lines = part.split('\n');
+                            const code = lines.slice(1).join('\n');
+                            return (
+                              <pre key={i} className="bg-gray-900 text-gray-100 p-2 rounded my-1 overflow-x-auto text-[10px]">
+                                <code>{code || part}</code>
+                              </pre>
+                            );
+                          }
+                          return <span key={i}>{part}</span>;
+                        })}
+                      </div>
+                      
+                      {message.proposedPrompt && (
+                        <div className="mt-2 pt-2 border-t border-green-500/50 bg-green-500/10 -mx-2 -mb-2 p-2 rounded-b-lg">
+                          <div className="flex items-center gap-1 mb-1">
+                            <Check className="h-3 w-3 text-green-600" />
+                            <span className="text-xs font-medium text-green-700 dark:text-green-400">
+                              Pronto!
+                            </span>
+                          </div>
+                          <div className="flex gap-1">
+                            <Button
+                              size="sm"
+                              onClick={() => applyProposedPrompt(message.proposedPrompt!, message.id)}
+                              className="flex-1 h-6 text-xs bg-green-600 hover:bg-green-700"
+                            >
+                              ✅ Aplicar
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-6 text-xs"
+                              onClick={() => {
+                                setChatMessages(prev => prev.map(msg => 
+                                  msg.id === message.id 
+                                    ? { ...msg, proposedPrompt: undefined, content: msg.content + '\n\n❌ Rejeitado' }
+                                    : msg
+                                ));
+                              }}
+                            >
+                              ❌
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                      
+                      <p className="text-[9px] opacity-50 mt-1">
+                        {message.timestamp.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+                
+                {isAiLoading && (
+                  <div className="flex justify-start">
+                    <div className="bg-accent rounded-lg p-2">
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        <span className="text-xs">Analisando...</span>
+                      </div>
+                    </div>
                   </div>
                 )}
-              />
-            </form>
-          </Form>
-
-          {/* Histórico de Versões - Modal/Drawer */}
-          {showVersions && promptVersions.length > 0 && (
-            <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50 lg:relative lg:bg-transparent">
-              <Card className="w-full lg:w-96 lg:absolute lg:bottom-4 lg:right-4 lg:max-h-96">
-                <CardHeader className="py-3">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-sm flex items-center gap-2">
-                      <History className="h-4 w-4" />
-                      Versões ({promptVersions.length})
-                    </CardTitle>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6"
-                      onClick={() => setShowVersions(false)}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </CardHeader>
-                <CardContent className="py-2">
-                  <ScrollArea className="h-72">
-                    <div className="space-y-2 pr-4">
-                      {promptVersions.map((version) => (
-                        <div 
-                          key={version.id}
-                          className="flex items-center justify-between p-2 rounded bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                        >
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              <Badge variant="secondary" className="text-xs">
-                                v{version.version_number}
-                              </Badge>
-                              <span className="text-xs text-muted-foreground">
-                                {new Date(version.created_at).toLocaleString('pt-BR')}
-                              </span>
+                
+                <div ref={chatEndRef} />
+              </div>
+            </ScrollArea>
+            
+            {/* Input do Chat */}
+            <div className="p-3 border-t shrink-0 bg-background">
+              {chatImage && (
+                <div className="mb-2 relative inline-block">
+                  <img 
+                    src={chatImage} 
+                    alt="Anexo" 
+                    className="h-16 w-auto rounded border"
+                  />
+                  <Button
+                    variant="destructive"
+                    size="icon"
+                    className="absolute -top-1 -right-1 h-5 w-5 rounded-full"
+                    onClick={() => setChatImage(null)}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+              )}
+              
+              <div className="flex gap-1">
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleImageSelect}
+                  accept="image/*"
+                  className="hidden"
+                />
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8 shrink-0"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isAiLoading || !form.getValues('gpt_api_key')}
+                >
+                  <ImagePlus className="h-3 w-3" />
+                </Button>
+                <Input
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  placeholder="Melhorar prompt..."
+                  className="h-8 text-xs"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      sendChatMessage();
+                    }
+                  }}
+                  onPaste={handlePaste}
+                  disabled={isAiLoading || !form.getValues('gpt_api_key')}
+                />
+                <Button 
+                  onClick={sendChatMessage} 
+                  disabled={isAiLoading || (!chatInput.trim() && !chatImage) || !form.getValues('gpt_api_key')}
+                  size="icon"
+                  className="h-8 w-8 shrink-0"
+                >
+                  {isAiLoading ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Send className="h-3 w-3" />
+                  )}
+                </Button>
+              </div>
+              {!form.getValues('gpt_api_key') && (
+                <p className="text-[10px] text-destructive mt-1">
+                  ⚠️ Configure a chave API na aba "Chaves"
+                </p>
+              )}
+            </div>
+          </div>
+          
+          {/* ===== COLUNA DIREITA: Canvas do Prompt ===== */}
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-white dark:bg-gray-900">
+            <Form {...form}>
+              <form className="h-full flex flex-col overflow-hidden">
+                <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col overflow-hidden">
+                  
+                  {/* TAB: Prompt (Canvas Principal) */}
+                  <TabsContent value="prompt" className="flex-1 flex flex-col m-0 overflow-hidden data-[state=inactive]:hidden">
+                    <div className="flex-1 overflow-auto p-4">
+                      <FormField
+                        control={form.control}
+                        name="instructions"
+                        render={({ field }) => (
+                          <FormItem className="h-full">
+                            <FormControl>
+                              <Textarea
+                                placeholder="# Playbook do Agente&#10;&#10;Você é um agente de vendas amigável e persuasivo...&#10;&#10;## Objetivos&#10;- Cultivar relacionamentos&#10;- Entender necessidades&#10;- Propor soluções&#10;&#10;## Tom de Voz&#10;Amigável, profissional, consultivo..."
+                                className="h-full min-h-[calc(100vh-200px)] resize-none font-mono text-sm leading-relaxed border-0 focus-visible:ring-0 focus-visible:ring-offset-0 bg-transparent"
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </TabsContent>
+                  
+                  {/* TAB: Modelo */}
+                  <TabsContent value="modelo" className="flex-1 min-h-0 p-6 overflow-auto data-[state=inactive]:hidden">
+                    <div className="max-w-xl space-y-6">
+                      <FormField
+                        control={form.control}
+                        name="name"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Nome do Agente</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Agente de Vendas B2B" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      
+                      <FormField
+                        control={form.control}
+                        name="gpt_model"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Modelo GPT</FormLabel>
+                            <div className="flex gap-2">
+                              <Select onValueChange={field.onChange} value={field.value}>
+                                <FormControl>
+                                  <SelectTrigger className="flex-1">
+                                    <SelectValue placeholder="Selecione o modelo GPT" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  {GPT_MODELS.map((model) => (
+                                    <SelectItem
+                                      key={model.value}
+                                      value={model.value}
+                                      title={model.description}
+                                      className="cursor-pointer"
+                                    >
+                                      {model.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={isTestingModel || !form.getValues('gpt_api_key')}
+                                onClick={async () => {
+                                  const apiKey = form.getValues('gpt_api_key');
+                                  const model = field.value;
+                                  if (!apiKey) {
+                                    toast.error('Configure a chave API primeiro');
+                                    return;
+                                  }
+                                  setIsTestingModel(true);
+                                  setModelTestResult(null);
+                                  const result = await testGPTModel(apiKey, model);
+                                  setModelTestResult(result.message);
+                                  setIsTestingModel(false);
+                                  if (result.success) {
+                                    toast.success(result.message);
+                                  } else {
+                                    toast.error(result.message);
+                                  }
+                                }}
+                              >
+                                {isTestingModel ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  '🧪 Testar'
+                                )}
+                              </Button>
                             </div>
-                            {version.version_note && (
-                              <p className="text-xs text-muted-foreground truncate">
-                                {version.version_note}
+                            {modelTestResult && (
+                              <p className={`text-xs mt-1 ${modelTestResult.includes('✅') ? 'text-green-600' : 'text-red-600'}`}>
+                                {modelTestResult}
                               </p>
                             )}
-                          </div>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => restoreVersion(version)}
-                            className="ml-2"
-                          >
-                            <RotateCcw className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      ))}
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
                     </div>
-                  </ScrollArea>
-                </CardContent>
-              </Card>
-            </div>
-          )}
+                  </TabsContent>
+                  
+                  {/* TAB: Chaves */}
+                  <TabsContent value="chaves" className="flex-1 min-h-0 p-6 overflow-auto data-[state=inactive]:hidden">
+                    <div className="max-w-xl space-y-6">
+                      <FormField
+                        control={form.control}
+                        name="gpt_api_key"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Chave da API GPT (OpenAI)</FormLabel>
+                            <FormControl>
+                              <Input type="password" placeholder="sk-proj-..." {...field} />
+                            </FormControl>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Sua chave da API OpenAI. Obtenha em platform.openai.com
+                            </p>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </TabsContent>
+                  
+                  {/* TAB: Ritmo */}
+                  <TabsContent value="ritmo" className="flex-1 min-h-0 p-6 overflow-auto data-[state=inactive]:hidden">
+                    <div className="max-w-xl space-y-6">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                        <FormField
+                          control={form.control}
+                          name="response_delay_seconds"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className="flex items-center gap-2">
+                                <Clock className="h-4 w-4" />
+                                Tempo de Leitura (seg)
+                              </FormLabel>
+                              <FormControl>
+                                <Input
+                                  type="number"
+                                  {...field}
+                                  onChange={(e) => field.onChange(Number(e.target.value))}
+                                />
+                              </FormControl>
+                              <p className="text-xs text-muted-foreground">
+                                Tempo que o agente "lê" antes de responder
+                              </p>
+                            </FormItem>
+                          )}
+                        />
+
+                        <FormField
+                          control={form.control}
+                          name="word_delay_seconds"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className="flex items-center gap-2">
+                                <Zap className="h-4 w-4" />
+                                Delay por Palavra (seg)
+                              </FormLabel>
+                              <FormControl>
+                                <Input
+                                  type="number"
+                                  step="0.1"
+                                  {...field}
+                                  onChange={(e) => field.onChange(Number(e.target.value))}
+                                />
+                              </FormControl>
+                              <p className="text-xs text-muted-foreground">
+                                Simula velocidade de digitação
+                              </p>
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                    </div>
+                  </TabsContent>
+                </Tabs>
+              </form>
+            </Form>
+          </div>
         </div>
+
+        {/* Versões do Prompt (Modal/Drawer) */}
+        {showVersions && promptVersions.length > 0 && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowVersions(false)}>
+            <Card className="w-full max-w-lg max-h-[80vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+              <CardHeader className="py-3 border-b">
+                <CardTitle className="text-sm flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <History className="h-4 w-4" />
+                    Histórico de Versões
+                  </div>
+                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setShowVersions(false)}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <ScrollArea className="h-[400px]">
+                  <div className="p-3 space-y-2">
+                    {promptVersions.map((version) => (
+                      <div 
+                        key={version.id}
+                        className="flex items-center justify-between p-2 rounded bg-muted/50 hover:bg-accent/50 transition-colors"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <Badge variant="secondary" className="text-xs">
+                              v{version.version_number}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground">
+                              {new Date(version.created_at).toLocaleString('pt-BR')}
+                            </span>
+                          </div>
+                          {version.version_note && (
+                            <p className="text-xs text-muted-foreground truncate mt-1">
+                              {version.version_note}
+                            </p>
+                          )}
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            restoreVersion(version);
+                            setShowVersions(false);
+                          }}
+                        >
+                          <RotateCcw className="h-3 w-3 mr-1" />
+                          Restaurar
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Dialog de Confirmação de Exclusão */}
+        <ConfirmDialog
+          open={deleteConfirm.open}
+          onOpenChange={(open) => setDeleteConfirm({ ...deleteConfirm, open })}
+          title="Excluir Agente?"
+          description={`Tem certeza que deseja excluir o agente "${deleteConfirm.agentName}"?\n\nEsta ação é IRREVERSÍVEL.`}
+          confirmText="Sim, Excluir"
+          cancelText="Cancelar"
+          variant="danger"
+          onConfirm={handleDelete}
+          isLoading={isDeleting}
+        />
       </div>
     );
   }
 
-  // Layout padrão quando não está editando
+  // ===========================================
+  // MODO LISTA (SEM EDIÇÃO) - Lista de Agentes
+  // ===========================================
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <div className="container mx-auto p-4">
+      <div className="container mx-auto p-4 max-w-7xl">
         <BackToHomeButton />
         <h1 className="text-3xl font-bold mb-6 text-center">Configuração do Agente de Prospecção</h1>
 
-        {/* Layout normal - Lista de agentes */}
-        <div className="max-w-3xl mx-auto space-y-6">
-          
-          {/* Criar Novo Agente */}
-          <Card>
-              <CardHeader className="pb-4">
-                <CardTitle className="flex items-center gap-2">
-                  <Bot className="h-5 w-5" />
-                  Criar Novo Agente
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Form {...form}>
-                  <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                    <FormField
-                      control={form.control}
-                      name="name"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Nome do Agente</FormLabel>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Coluna Esquerda: Criar Novo Agente */}
+          <div>
+            {/* Criar Novo Agente */}
+            <Card className="mb-6">
+          <CardHeader className="pb-4">
+            <CardTitle className="flex items-center gap-2">
+              <Bot className="h-5 w-5" />
+              Criar Novo Agente
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Nome do Agente</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Agente de Vendas B2B" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                
+                <FormField
+                  control={form.control}
+                  name="instructions"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Instruções do Agente (Prompt GPT)</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          placeholder="Você é um agente de vendas amigável e persuasivo. Seu objetivo é..."
+                          className="min-h-[150px] font-mono text-sm"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="gpt_model"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Modelo GPT</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
                           <FormControl>
-                            <Input placeholder="Agente de Vendas B2B" {...field} />
+                            <SelectTrigger>
+                              <SelectValue placeholder="Selecione o modelo" />
+                            </SelectTrigger>
                           </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+                          <SelectContent>
+                            {GPT_MODELS.map((model) => (
+                              <SelectItem key={model.value} value={model.value}>
+                                {model.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
 
-                    <FormField
-                      control={form.control}
-                      name="gpt_model"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Modelo GPT</FormLabel>
-                          <div className="flex gap-2">
-                            <Select onValueChange={field.onChange} value={field.value}>
-                              <FormControl>
-                                <SelectTrigger className="flex-1">
-                                  <SelectValue placeholder="Selecione o modelo GPT" />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                {GPT_MODELS.map((model) => (
-                                  <SelectItem
-                                    key={model.value}
-                                    value={model.value}
-                                    title={model.description}
-                                    className="cursor-pointer"
-                                  >
-                                    {model.label}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              disabled={isTestingModel || !form.getValues('gpt_api_key')}
-                              onClick={async () => {
-                                const apiKey = form.getValues('gpt_api_key');
-                                const model = field.value;
-                                if (!apiKey) {
-                                  toast.error('Configure a chave API primeiro');
-                                  return;
-                                }
-                                setIsTestingModel(true);
-                                setModelTestResult(null);
-                                const result = await testGPTModel(apiKey, model);
-                                setModelTestResult(result.message);
-                                setIsTestingModel(false);
-                                if (result.success) {
-                                  toast.success(result.message);
-                                } else {
-                                  toast.error(result.message);
-                                }
-                              }}
-                            >
-                              {isTestingModel ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                '🧪 Testar'
-                              )}
-                            </Button>
-                          </div>
-                          {modelTestResult && (
-                            <p className={`text-xs mt-1 ${modelTestResult.includes('✅') ? 'text-green-600' : 'text-red-600'}`}>
-                              {modelTestResult}
-                            </p>
-                          )}
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="instructions"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Instruções do Agente</FormLabel>
-                          <FormControl>
-                            <Textarea
-                              placeholder="Você é um agente de vendas amigável e persuasivo..."
-                              className="min-h-[200px] font-mono text-sm"
-                              {...field}
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="gpt_api_key"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Chave da API GPT</FormLabel>
-                          <FormControl>
-                            <Input type="password" placeholder="sk-proj-..." {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <Tabs defaultValue="ritmo" className="w-full">
-                      <TabsList className="grid w-full grid-cols-2">
-                        <TabsTrigger value="ritmo">Timing</TabsTrigger>
-                        <TabsTrigger value="avancado">Avançado</TabsTrigger>
-                      </TabsList>
-
-                      <TabsContent value="ritmo" className="space-y-4">
-                        <div className="grid grid-cols-2 gap-4">
-                          <FormField
-                            control={form.control}
-                            name="response_delay_seconds"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel className="flex items-center gap-1 text-xs">
-                                  <Clock className="h-3 w-3" />
-                                  Leitura (seg)
-                                </FormLabel>
-                                <FormControl>
-                                  <Input
-                                    type="number"
-                                    {...field}
-                                    onChange={(e) => field.onChange(Number(e.target.value))}
-                                  />
-                                </FormControl>
-                              </FormItem>
-                            )}
-                          />
-
-                          <FormField
-                            control={form.control}
-                            name="word_delay_seconds"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel className="flex items-center gap-1 text-xs">
-                                  <Zap className="h-3 w-3" />
-                                  Por Palavra (seg)
-                                </FormLabel>
-                                <FormControl>
-                                  <Input
-                                    type="number"
-                                    step="0.1"
-                                    {...field}
-                                    onChange={(e) => field.onChange(Number(e.target.value))}
-                                  />
-                                </FormControl>
-                              </FormItem>
-                            )}
-                          />
-                        </div>
-                      </TabsContent>
-
-                      <TabsContent value="avancado" className="space-y-4">
-                        <p className="text-xs text-muted-foreground">
-                          Configurações avançadas virão aqui no futuro.
-                        </p>
-                      </TabsContent>
-                    </Tabs>
-
-                    <div className="flex gap-2">
-                      <Button type="submit" className="flex-1">
-                        Criar Agente
-                      </Button>
-                      <Button type="button" variant="outline" size="icon" onClick={resetToDefaults}>
-                        <RotateCcw className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </form>
-                </Form>
-              </CardContent>
-            </Card>
-
-          {/* Lista de Agentes */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Meus Agentes</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {agents.length === 0 ? (
-                <p className="text-center text-muted-foreground py-8">
-                  Nenhum agente configurado ainda.
-                </p>
-              ) : (
-                <div className="space-y-3">
-                  {agents.map((agent) => (
-                    <div 
-                      key={agent.id} 
-                      className="flex items-center justify-between p-3 border rounded-lg hover:bg-accent/50 transition-colors"
-                    >
-                      <div className="flex-1 min-w-0 mr-4">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="font-medium truncate">{agent.name}</h3>
-                          <Badge variant="secondary" className="text-xs shrink-0">
-                            {agent.gpt_model}
-                          </Badge>
-                        </div>
-                        <p className="text-xs text-muted-foreground line-clamp-1">
-                          {agent.instructions}
-                        </p>
-                      </div>
-                      <div className="flex gap-1 shrink-0">
-                        <Button variant="ghost" size="icon" onClick={() => handleEdit(agent)}>
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => openDeleteConfirm(agent)}>
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
+                  <FormField
+                    control={form.control}
+                    name="gpt_api_key"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Chave da API GPT</FormLabel>
+                        <FormControl>
+                          <Input type="password" placeholder="sk-proj-..." {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                 </div>
-              )}
-            </CardContent>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="response_delay_seconds"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="flex items-center gap-1 text-xs">
+                          <Clock className="h-3 w-3" />
+                          Leitura (seg)
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            {...field}
+                            onChange={(e) => field.onChange(Number(e.target.value))}
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="word_delay_seconds"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="flex items-center gap-1 text-xs">
+                          <Zap className="h-3 w-3" />
+                          Por Palavra (seg)
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            step="0.1"
+                            {...field}
+                            onChange={(e) => field.onChange(Number(e.target.value))}
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <Button type="submit" className="w-full">
+                  Criar Agente
+                </Button>
+              </form>
+            </Form>
+          </CardContent>
           </Card>
+          </div>
+          {/* Coluna Direita: Lista de Agentes */}
+          <div>
+        {/* Lista de Agentes */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Meus Agentes</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {agents.length === 0 ? (
+              <p className="text-center text-muted-foreground py-8">
+                Nenhum agente configurado ainda.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {agents.map((agent) => (
+                  <div 
+                    key={agent.id} 
+                    className="flex items-center justify-between p-3 border rounded-lg hover:bg-accent/50 transition-colors"
+                  >
+                    <div className="flex-1 min-w-0 mr-4">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="font-medium truncate">{agent.name}</h3>
+                        <Badge variant="secondary" className="text-xs shrink-0">
+                          {agent.gpt_model}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground line-clamp-1">
+                        {agent.instructions}
+                      </p>
+                    </div>
+                    <div className="flex gap-1 shrink-0">
+                      <Button variant="ghost" size="icon" onClick={() => handleEdit(agent)}>
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => openDeleteConfirm(agent)}>
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+          </div>
         </div>
       </div>
 
@@ -2042,8 +2195,8 @@ ${successCount === totalTests ? '✅ Todas as edições preservaram o documento!
         open={deleteConfirm.open}
         onOpenChange={(open) => setDeleteConfirm({ ...deleteConfirm, open })}
         title="Excluir Agente?"
-        description={`Tem certeza que deseja excluir o agente "${deleteConfirm.agentName}"?\n\nEsta ação é IRREVERSÍVEL e você:\n• Perderá todas as configurações do agente\n• Perderá todo o histórico de prompts\n• Campanhas usando este agente ficarão sem agente`}
-        confirmText="Sim, Excluir Agente"
+        description={`Tem certeza que deseja excluir o agente "${deleteConfirm.agentName}"?\n\nEsta ação é IRREVERSÍVEL.`}
+        confirmText="Sim, Excluir"
         cancelText="Cancelar"
         variant="danger"
         onConfirm={handleDelete}
